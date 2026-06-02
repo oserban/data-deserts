@@ -15,7 +15,7 @@
   var state = {
     mode: "domains", includeGlobal: true, patchy: false, threshLog: 6,
     year: META.yearMax, singleDomain: DOMAINS[0],
-    domains: {}, access: {}, highlight: null, matrixMode: "count"
+    domains: {}, access: {}, highlight: null, matrixMode: "count", gbifHeat: false
   };
   DOMAINS.forEach(function (d) { state.domains[d] = true; });
   ACCESS_GROUPS.forEach(function (a) { state.access[a] = true; });
@@ -89,10 +89,25 @@
 
   // ---- map ----
   var map = L.map("map", {
-    worldCopyJump: false, minZoom: 2, maxZoom: 6,
+    worldCopyJump: false, minZoom: 2, maxZoom: 10,
     attributionControl: false, zoomControl: true, preferCanvas: false
   }).setView([25, 10], 2);
   map.setMaxBounds([[-85, -200], [88, 200]]);
+
+  // ---- live GBIF occurrence-density heatmap (fine-grain biodiversity sampling) ----
+  // Tiles fetched from the GBIF map API; gives within-country patchiness that the
+  // country choropleth can't show. Needs internet (the rest of the app is offline).
+  map.createPane("gbifPane");
+  map.getPane("gbifPane").style.zIndex = 350;          // above basemap tiles, below country vectors
+  map.getPane("gbifPane").style.pointerEvents = "none";
+  var cartoBase = L.tileLayer(
+    "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+    { subdomains: "abcd", maxZoom: 19, detectRetina: true });
+  // heat-glow style: empty = transparent (dark basemap shows through), dense = bright glow
+  var gbifHeat = L.tileLayer(
+    "https://api.gbif.org/v2/map/occurrence/density/{z}/{x}/{y}@1x.png" +
+    "?srs=EPSG:3857&style=orangeHeat.point",
+    { tileSize: 512, zoomOffset: -1, opacity: 0.72, pane: "gbifPane", maxNativeZoom: 14 });
 
   (function graticule() {
     var lines = [];
@@ -129,6 +144,10 @@
   }).addTo(map);
 
   function styleFn(feat) {
+    if (state.gbifHeat && !state.highlight) {
+      // transparent fills so the heatmap shows through; keep faint country outlines as a guide
+      return { fillColor: "#000", fillOpacity: 0, color: "#7f93a8", weight: 0.5, opacity: 0.55 };
+    }
     if (state.highlight) {
       var ds = DATASETS.find(function (d) { return d.name === state.highlight; });
       var on = ds && coversCountry(ds, feat.id);
@@ -259,6 +278,21 @@
       b.classList.add("active"); state.matrixMode = b.dataset.m; renderInsights();
     };
   });
+
+  // ---- GBIF live density heatmap toggle ----
+  var gbifBtn = document.getElementById("gbifBtn");
+  gbifBtn.onclick = function () {
+    state.gbifHeat = !state.gbifHeat;
+    gbifBtn.classList.toggle("active", state.gbifHeat);
+    document.getElementById("gbifLegend").style.display = state.gbifHeat ? "block" : "none";
+    if (state.gbifHeat) {
+      cartoBase.addTo(map); gbifHeat.addTo(map);
+      toast("Live GBIF density on — scroll to zoom into any region to see within-country patchiness.  © GBIF.org, © CARTO", 5000);
+    } else {
+      map.removeLayer(gbifHeat); map.removeLayer(cartoBase);
+    }
+    applyStyles();
+  };
 
   function renderInsights() {
     var sets = WORLD_GEOJSON.features.map(function (f) { return { id: f.id, name: f.properties.name, doms: countryInfo(f.id).domains }; });
@@ -446,9 +480,9 @@
     if (p.has("a")) { var a = p.get("a"); ACCESS_GROUPS.forEach(function (ac, k) { state.access[ac] = a[k] !== "0"; }); }
     syncControls();
   }
-  function toast(msg) {
+  function toast(msg, ms) {
     var t = document.getElementById("toast"); t.textContent = msg; t.classList.add("show");
-    clearTimeout(t._tm); t._tm = setTimeout(function () { t.classList.remove("show"); }, 2200);
+    clearTimeout(t._tm); t._tm = setTimeout(function () { t.classList.remove("show"); }, ms || 2200);
   }
   document.getElementById("linkBtn").onclick = function () {
     syncHash();

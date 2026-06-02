@@ -107,6 +107,16 @@
   .pill{display:inline-block;font-size:10.5px;padding:1px 6px;border-radius:10px;border:1px solid var(--line);
         color:var(--muted)}
 
+  /* ---- gbif heat legend ---- */
+  #gbifLegend{position:absolute;right:14px;bottom:14px;z-index:1100;width:250px;display:none;
+              background:rgba(15,22,32,.96);border:1px solid var(--line);border-radius:11px;padding:12px 14px;
+              box-shadow:0 10px 34px rgba(0,0,0,.55)}
+  #gbifLegend .gl-title{font-size:13px;font-weight:600;margin-bottom:8px}
+  #gbifLegend .gl-bar{height:13px;border-radius:4px;
+       background:linear-gradient(90deg,#1a1208,#7a2d0a,#e8731c,#ffd34d,#fff6cf)}
+  #gbifLegend .gl-ends{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-top:3px}
+  #gbifLegend .gl-hint{font-size:11.5px;color:var(--muted);line-height:1.45;margin-top:8px}
+
   /* ---- story mode ---- */
   #story{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);z-index:1200;width:min(660px,calc(100% - 60px));
          background:rgba(15,22,32,.96);border:1px solid var(--accent);border-radius:14px;padding:16px 20px 14px;
@@ -121,7 +131,7 @@
   #storyNext{background:var(--accent);color:#06151f;border-color:var(--accent);font-weight:600}
 
   /* ---- toast ---- */
-  #toast{position:absolute;left:50%;top:64px;transform:translateX(-50%);z-index:1300;
+  #toast{position:absolute;left:50%;top:64px;transform:translateX(-50%);z-index:1300;max-width:440px;text-align:center;line-height:1.4;
          background:rgba(15,22,32,.96);border:1px solid var(--accent);border-radius:9px;padding:9px 15px;
          font-size:13px;box-shadow:0 8px 26px rgba(0,0,0,.5);opacity:0;pointer-events:none;transition:opacity .3s}
   #toast.show{opacity:1}
@@ -246,6 +256,7 @@
       <input id="search" list="countryList" placeholder="Search a country…" autocomplete="off" />
       <datalist id="countryList"></datalist>
       <button id="insightsBtn">📊 Insights</button>
+      <button id="gbifBtn" title="Live GBIF biodiversity record density — zoom in to see within-country patchiness">🔥 GBIF density</button>
       <button id="storyBtn">▶ Story</button>
       <button id="pngBtn" title="Download the current map as a PNG">🖼 PNG</button>
       <button id="linkBtn" title="Copy a link that reproduces this exact view">🔗 Link</button>
@@ -254,6 +265,14 @@
     <div id="fpBanner">
       <span id="fpText"></span>
       <button class="link" id="fpClear">clear</button>
+    </div>
+
+    <div id="gbifLegend">
+      <div class="gl-title">🔥 GBIF biodiversity records (live)</div>
+      <div class="gl-bar"></div>
+      <div class="gl-ends"><span>few / none</span><span>many</span></div>
+      <div class="gl-hint">Each cell = density of species observations. <b>Zoom in</b> (scroll) to see
+        within-country patchiness — e.g. the Amazon vs. interior Peru.</div>
     </div>
 
     <div id="story">
