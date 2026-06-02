@@ -103,11 +103,14 @@
   var cartoBase = L.tileLayer(
     "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
     { subdomains: "abcd", maxZoom: 19, detectRetina: true });
-  // heat-glow style: empty = transparent (dark basemap shows through), dense = bright glow
+  // Point heat-glow style: detailed "painted" look (rivers, sampling tracks), empty areas
+  // transparent so the dark basemap shows through. Heavier tiles, but GBIF CDN-caches them;
+  // updateWhenIdle defers requests until panning stops, removing most of the perceived lag.
   var gbifHeat = L.tileLayer(
     "https://api.gbif.org/v2/map/occurrence/density/{z}/{x}/{y}@1x.png" +
     "?srs=EPSG:3857&style=orangeHeat.point",
-    { tileSize: 512, zoomOffset: -1, opacity: 0.72, pane: "gbifPane", maxNativeZoom: 14 });
+    { tileSize: 512, zoomOffset: -1, opacity: 0.78, pane: "gbifPane", maxNativeZoom: 14,
+      updateWhenIdle: true, updateWhenZooming: false, keepBuffer: 2 });
 
   (function graticule() {
     var lines = [];
@@ -585,22 +588,39 @@
     storyEl.classList.remove("open"); document.getElementById("storyBtn").classList.remove("active");
     stopPlay(); toggleInsights(false);
   }
-  function stopPlay() { playing = false; clearInterval(playTimer); document.getElementById("storyPlay").textContent = "▶ Play"; }
+  function stopPlay() { playing = false; clearInterval(playTimer); document.getElementById("storyPlay").textContent = "Play"; }
   document.getElementById("storyBtn").onclick = function () { storyEl.classList.contains("open") ? exitStory() : openStory(); };
   document.getElementById("storyNext").onclick = function () { stopPlay(); showStory(storyIdx + 1); };
   document.getElementById("storyPrev").onclick = function () { stopPlay(); showStory(storyIdx - 1); };
   document.getElementById("storyExit").onclick = exitStory;
   document.getElementById("storyPlay").onclick = function () {
     if (playing) { stopPlay(); return; }
-    playing = true; this.textContent = "❚❚ Pause";
+    playing = true; this.textContent = "Pause";
     playTimer = setInterval(function () {
       if (storyIdx === STORY.length - 1) { stopPlay(); return; }
       showStory(storyIdx + 1);
     }, 6500);
   };
 
+  // ---- intro / help overlay ----
+  var introEl = document.getElementById("intro");
+  function openIntro() { introEl.classList.add("open"); }
+  function closeIntro() {
+    introEl.classList.remove("open");
+    try { localStorage.setItem("dd_seen", "1"); } catch (e) { /* file:// may block */ }
+  }
+  document.getElementById("introClose").onclick = closeIntro;
+  document.getElementById("introTour").onclick = function () { closeIntro(); openStory(); };
+  document.getElementById("helpBtn").onclick = openIntro;
+  function maybeShowIntro() {
+    var seen = false;
+    try { seen = localStorage.getItem("dd_seen") === "1"; } catch (e) { /* ignore */ }
+    if (!seen && (!location.hash || location.hash.length < 2)) openIntro();   // skip if opening a shared view
+  }
+
   // ---- init ----
   syncControls();
   loadHash();
   redraw();
+  maybeShowIntro();
 })();
