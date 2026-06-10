@@ -24,7 +24,13 @@ deserts appear.
 ## Controls
 
 - **Colour the map by**: number of domains / number of datasets / a single domain /
+  **public-health surveys (number)** / **public-health surveys (most recent)** /
   **GBIF biodiversity record density** (real per-country occurrence counts).
+- **Click a country → public-health survey timeline.** Instead of just "has DHS / has MICS",
+  it lists the actual individual surveys with years (e.g. *DHS 1990 · DHS 2003 · MIS 2010 …*),
+  so you can see whether a country has one old survey or many recent ones. Sources: the live
+  **DHS API**, the **World Bank microdata catalogue** for MICS, and compiled **LSMS-ISA** waves.
+  The time slider also filters surveys, so you can watch them accumulate by year.
 - **The global layer**: include or exclude datasets that cover everywhere by construction.
 - **Biodiversity records are patchy**: global species databases (GBIF, BioTime…) nominally
   cover the world, but records cluster in the US/Europe. Switch this on and a country only
@@ -87,3 +93,7 @@ instead of country-level approximations.
   (MapBiomas, ESA CCI) is a deliberate, editable stance in `build_data.py`.
 - Country lists for DHS/MICS/LSMS-ISA exclude a few tiny island states absent from the
   low-resolution world map.
+- **Survey lists**: DHS is authoritative (DHS API). **MICS may be incomplete** — it comes from
+  the World Bank microdata catalogue (179 surveys / 78 countries), not the full MICS programme;
+  missing rounds can be added in `build_data.py`. **LSMS-ISA waves are compiled/approximate.**
+  Survey-level data lives in `data/dhs_surveys.json` and `data/mics_surveys.json`.

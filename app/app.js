@@ -22,6 +22,21 @@
   }
   var ACCESS_GROUPS = ["Public", "Private", "Both"];
   var GBIF = window.GBIF_DENSITY || {};
+  var SURVEYS = window.SURVEYS || {};
+  var PROGRAM_COLOR = { "DHS": "#c0392b", "MIS": "#e0875b", "AIS": "#d98880",
+                        "MICS": "#2980b9", "LSMS-ISA": "#27ae60" };
+  var surveyMax = 1;                                     // max surveys/country (set each redraw)
+  // surveys for a country, respecting the time slider (only surveys up to the chosen year)
+  function surveysFor(iso) {
+    return (SURVEYS[iso] || []).filter(function (s) { return s.year <= state.year; });
+  }
+  function lerpColor(t, c0, c1) {
+    t = Math.max(0, Math.min(1, t));
+    var r = Math.round(c0[0] + (c1[0] - c0[0]) * t),
+        g = Math.round(c0[1] + (c1[1] - c0[1]) * t),
+        b = Math.round(c0[2] + (c1[2] - c0[2]) * t);
+    return "rgb(" + r + "," + g + "," + b + ")";
+  }
 
   var state = {
     mode: "domains", includeGlobal: true, patchy: false, threshLog: 6,
@@ -66,6 +81,11 @@
   }
   function countryValue(iso) {
     if (state.mode === "density") return GBIF[iso] || 0;
+    if (state.mode === "surveys") return surveysFor(iso).length;
+    if (state.mode === "recency") {
+      var sv = surveysFor(iso);
+      return sv.length ? sv[sv.length - 1].year : 0;     // most recent survey year
+    }
     var info = countryInfo(iso);
     if (state.mode === "datasets") return info.datasets.length;
     if (state.mode === "single") return info.domains.indexOf(state.singleDomain) !== -1 ? 1 : 0;
@@ -88,6 +108,13 @@
     var v = countryValue(iso);
     if (state.mode === "single") return v ? DOMAIN_COLOR[state.singleDomain] : NONE;
     if (state.mode === "datasets") return datasetColor(v);   // continuous
+    if (state.mode === "surveys")                            // continuous teal, by survey count
+      return v ? lerpColor(v / (surveyMax || 1), [199, 233, 222], [0, 95, 78]) : NONE;
+    if (state.mode === "recency") {                          // how recent is the latest survey
+      if (!v) return NONE;
+      var age = state.year - v;
+      return age <= 5 ? "#1a9850" : age <= 15 ? "#fee08b" : "#d73027";
+    }
     return DOMAIN_COUNT[Math.min(v, 4)];                      // categorical 0..4
   }
 
@@ -139,6 +166,13 @@
           return '<b>' + feat.properties.name + '</b><br>' +
             (c ? c.toLocaleString() + ' GBIF records' : '<span style="color:#ff7b6b">no GBIF records</span>');
         }
+        if (state.mode === "surveys" || state.mode === "recency") {
+          var sv = surveysFor(feat.id);
+          if (!sv.length) return '<b>' + feat.properties.name + '</b><br><span style="color:#ff7b6b">no DHS/MICS/LSMS surveys</span>';
+          var last = sv[sv.length - 1];
+          return '<b>' + feat.properties.name + '</b><br>' + sv.length + ' survey' + (sv.length > 1 ? 's' : '') +
+            '<br>' + sv[0].year + '–' + last.year + ' · latest: ' + last.type + ' ' + last.year;
+        }
         var info = countryInfo(feat.id);
         var chips = info.domains.map(function (d) {
           return '<span class="dom" style="background:' + DOMAIN_COLOR[d] + '"></span>' + d;
@@ -165,11 +199,13 @@
   }
   function applyStyles() { layer.setStyle(styleFn); }
 
-  function recomputeScales() {                            // max active datasets per country
-    dsMax = 1;
+  function recomputeScales() {                            // per-render max scales
+    dsMax = 1; surveyMax = 1;
     WORLD_GEOJSON.features.forEach(function (f) {
       var n = countryInfo(f.id).datasets.length;
       if (n > dsMax) dsMax = n;
+      var s = surveysFor(f.id).length;
+      if (s > surveyMax) surveyMax = s;
     });
   }
 
@@ -183,6 +219,23 @@
   // ---- detail panel ----
   var detail = document.getElementById("detail");
   document.getElementById("detailClose").onclick = function () { detail.style.display = "none"; };
+
+  // chronological timeline of the actual public-health surveys for a country
+  function surveyTimelineHTML(iso) {
+    var sv = surveysFor(iso);
+    if (!sv.length) return "";
+    var chips = sv.map(function (s) {
+      var c = PROGRAM_COLOR[s.type] || PROGRAM_COLOR[s.program] || "#8a97a6";
+      return '<span class="svchip" style="border-color:' + c + ';color:' + c + '" title="' +
+        s.program + ' ' + s.label + '">' + s.type + ' ' + s.year + '</span>';
+    }).join("");
+    return '<div class="domblock">' +
+      '<div class="dlabel"><span class="swatch" style="background:' + DOMAIN_COLOR["Public Health"] + '"></span>' +
+        'Public-health surveys <span class="pill">' + sv.length + '</span></div>' +
+      '<div class="sv-span">' + sv[0].year + '–' + sv[sv.length - 1].year + ' &middot; individual surveys collected:</div>' +
+      '<div class="sv-chips">' + chips + '</div></div>';
+  }
+
   function openDetail(iso, name) {
     var info = countryInfo(iso);
     document.getElementById("dName").textContent = name;
@@ -190,8 +243,9 @@
     document.getElementById("dMeta").innerHTML =
       info.domains.length + " of 4 domains &middot; " + info.datasets.length + " dataset(s) active" + dens;
     var body = document.getElementById("dBody");
-    body.innerHTML = "";
-    if (!info.datasets.length) {
+    var svHTML = state.domains["Public Health"] ? surveyTimelineHTML(iso) : "";
+    body.innerHTML = svHTML;
+    if (!info.datasets.length && !svHTML) {
       body.innerHTML = '<div class="empty">No active datasets cover this country under the current filters — a data desert.</div>';
     } else {
       DOMAINS.forEach(function (dom) {
@@ -272,6 +326,17 @@
         '<div class="legend-bar" style="background:linear-gradient(90deg,#e7dcf3,#5d2a8f)"></div>' +
         '<div class="legend-ends"><span>1</span><span>' + dsMax + ' datasets</span></div>' +
         '<div class="legend-row" style="margin-top:6px"><span class="box" style="background:' + NONE + '"></span>no data in active layers</div>';
+    } else if (state.mode === "surveys") {
+      el.innerHTML =
+        '<div class="legend-bar" style="background:linear-gradient(90deg,#c7e9de,#005f4e)"></div>' +
+        '<div class="legend-ends"><span>1</span><span>' + surveyMax + ' surveys</span></div>' +
+        '<div class="legend-row" style="margin-top:6px"><span class="box" style="background:' + NONE + '"></span>no DHS/MICS/LSMS surveys</div>';
+    } else if (state.mode === "recency") {
+      el.innerHTML =
+        '<div class="legend-row"><span class="box" style="background:#1a9850"></span>latest within 5 years</div>' +
+        '<div class="legend-row"><span class="box" style="background:#fee08b"></span>6–15 years ago</div>' +
+        '<div class="legend-row"><span class="box" style="background:#d73027"></span>16+ years ago</div>' +
+        '<div class="legend-row"><span class="box" style="background:' + NONE + '"></span>no surveys</div>';
     } else {
       // categorical (only 5 possible values: 0..4 domains)
       var labels = ["0 — none (desert)", "1 domain", "2 domains", "3 domains", "4 domains"];
@@ -572,7 +637,8 @@
     }
   }
   function modeLabel() {
-    return { domains: "domains with data", datasets: "dataset count", single: state.singleDomain, density: "GBIF record density" }[state.mode];
+    return { domains: "domains with data", datasets: "dataset count", single: state.singleDomain,
+             surveys: "public-health surveys", recency: "most recent survey", density: "GBIF record density" }[state.mode];
   }
   function roundRect(ctx, x, y, w, h, r) {
     ctx.beginPath();

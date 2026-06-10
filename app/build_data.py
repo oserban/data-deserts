@@ -307,6 +307,66 @@ for iso2, cnt in gbif_counts.items():
 for ds in DATASETS:
     ds["densityProxy"] = ds["coverageType"] == "global-obs"
 
+# ---------------------------------------------------------------------------
+# 3d. Public-health SURVEY-LEVEL data (individual surveys per country, with year)
+# ---------------------------------------------------------------------------
+# Reviewers asked to see the actual surveys (DHS 1990, MICS 2005, ...) per country,
+# not just "has DHS / has MICS" — the recency & number of surveys is what matters.
+#   DHS:  authoritative, from the DHS API  (data/dhs_surveys.json)
+#   MICS: from the World Bank microdata catalogue (data/mics_surveys.json) - may be
+#         incomplete; the team can add missing rounds.
+#   LSMS-ISA: the 8 ISA countries' integrated-survey waves (compiled, approximate).
+ALIASES.update({                                  # extra survey-source name spellings
+    "Turkiye": "Turkey", "Türkiye": "Turkey", "Viet Nam": "Vietnam",
+    "Lao PDR": "Laos", "Republic of Moldova": "Moldova",
+    "State of Palestine": "West Bank", "North Macedonia": "Macedonia",
+    "Democratic Republic of the Congo": "Democratic Republic of the Congo",
+    "Republic of the Congo": "Republic of the Congo", "Congo, Rep.": "Republic of the Congo",
+    "Congo, Dem. Rep.": "Democratic Republic of the Congo", "Kyrgyzstan": "Kyrgyzstan",
+    "Eswatini": "Swaziland", "Cabo Verde": None, "Sao Tome and Principe": None,
+    "Timor-Leste": "East Timor", "Gambia, The": "Gambia",
+    "Bosnia-Herzegovina": "Bosnia and Herzegovina", "Egypt, Arab Rep.": "Egypt",
+    "Macedonia, FYR": "Macedonia", "St. Lucia": None, "Syrian Arab Republic": "Syria",
+    "West Bank and Gaza": "West Bank", "Yemen, Rep.": "Yemen",
+})
+
+LSMS_WAVES = {                                    # LSMS-ISA integrated-survey waves (approx.)
+    "Ethiopia": [2011, 2013, 2015, 2018],
+    "Malawi": [2010, 2013, 2016, 2019],
+    "Mali": [2014, 2017, 2018],
+    "Niger": [2011, 2014],
+    "Nigeria": [2010, 2012, 2015, 2018],
+    "Tanzania": [2008, 2010, 2012, 2014, 2019],
+    "Uganda": [2009, 2010, 2011, 2013, 2015, 2018, 2019],
+    "Burkina Faso": [2014, 2018],
+}
+
+SURVEYS = {}                                      # iso3 -> [ {program, type, year, label} ]
+def add_survey(name, program, year, label, stype):
+    iso = to_iso(name)
+    if not iso:
+        return
+    SURVEYS.setdefault(iso, []).append(
+        {"program": program, "type": stype, "year": int(year), "label": label})
+
+for s in json.load(open(os.path.join(HERE, "data", "dhs_surveys.json"))):
+    add_survey(s["country"], "DHS", s["year"], s["label"], s.get("type", "DHS"))
+for s in json.load(open(os.path.join(HERE, "data", "mics_surveys.json"))):
+    add_survey(s["country"], "MICS", s["year"], s["label"], "MICS")
+for country, years in LSMS_WAVES.items():
+    for y in years:
+        add_survey(country, "LSMS-ISA", y, str(y), "LSMS-ISA")
+
+for iso in SURVEYS:                               # chronological, dedup identical (program, year)
+    seen = set(); uniq = []
+    for s in sorted(SURVEYS[iso], key=lambda x: (x["year"], x["program"])):
+        k = (s["program"], s["year"])
+        if k not in seen:
+            seen.add(k); uniq.append(s)
+    SURVEYS[iso] = uniq
+
+n_surveys = sum(len(v) for v in SURVEYS.values())
+
 DOMAINS = ["Ecology", "Hydro", "Agriculture", "Public Health"]
 META = {
     "domains": DOMAINS,
@@ -321,6 +381,8 @@ META = {
     "yearMax": YEAR_NOW,
     "gbifTotal": sum(GBIF_DENSITY.values()),
     "gbifMax": max(GBIF_DENSITY.values()),
+    "surveyCount": n_surveys,
+    "surveyCountries": len(SURVEYS),
 }
 
 # ---------------------------------------------------------------------------
@@ -340,6 +402,8 @@ with open(os.path.join(HERE, "data", "datasets.js"), "w") as fh:
     json.dump(META, fh, ensure_ascii=False, indent=1)
     fh.write(";\nwindow.GBIF_DENSITY = ")
     json.dump(GBIF_DENSITY, fh, ensure_ascii=False, separators=(",", ":"))
+    fh.write(";\nwindow.SURVEYS = ")
+    json.dump(SURVEYS, fh, ensure_ascii=False, separators=(",", ":"))
     fh.write(";\n")
 
 print("DHS  ->", len(DHS_ISO), "countries on map")
