@@ -205,10 +205,11 @@
       <label class="toggle">
         <input type="checkbox" id="includeGlobal" checked />
         <span>
-          <span class="t-title">Include global-coverage datasets</span>
-          <span class="t-desc">Gridded remote-sensing / reanalysis products + global record
-            databases that "cover everywhere" by construction. Switch off to see where
-            in-situ &amp; survey data actually exist.</span>
+          <span class="t-title">Include datasets that aim for global coverage</span>
+          <span class="t-desc">Datasets meant to span the whole world: gridded models
+            (climate, land cover, crops) <i>and</i> large aggregated databases (e.g. GBIF).
+            Many aren't truly complete — the biodiversity layer shows the gaps. Toggle off to
+            compare with bounded, targeted datasets (national surveys, regional projects).</span>
         </span>
       </label>
       <label class="toggle" style="margin-top:9px">
@@ -255,13 +256,15 @@
     <div class="section">
       <h2>Coverage summary</h2>
       <div id="stats"></div>
+      <div style="font-size:11px;color:var(--muted);margin-top:6px">Counted per country (180 on the map).</div>
       <div style="margin-top:8px"><button class="link" id="reset">Reset all filters</button></div>
     </div>
 
     <div class="credit">
-      Country-level coverage derived from the team's <i>Data Sources</i> inventory.
-      Global products cover all land; targeted surveys (DHS, MICS, LSMS-ISA) and regional
-      products are mapped to their country lists. Focus is on <i>presence of data</i>, not quality.
+      Coverage is at <b>country level</b>, derived from the team's <i>Data Sources</i> inventory.
+      Datasets that aim for global coverage span all land; targeted surveys (DHS, MICS, LSMS-ISA)
+      and regional products are mapped to their country lists. The focus is on <i>presence of these
+      specific datasets</i> — not data quality, and not all data that may exist elsewhere.
     </div>
   </div>
 
@@ -315,10 +318,11 @@
           The focus is on <i>whether data exists</i>, not its quality.</p>
         <ol>
           <li>Each country is shaded by <b>how many of the four domains have data there</b>
-            (red = none, a data desert → green = all four).</li>
+            (grey = none, a data desert → deep purple = all four).</li>
           <li><b>Click any country</b> to see exactly which datasets cover it.</li>
-          <li>In the left panel, switch <b>“Include global-coverage datasets”</b> off to strip away
-            the products that blanket the planet by default — and reveal the real deserts.</li>
+          <li>In the left panel, switch <b>“datasets that aim for global coverage”</b> off to compare
+            them with the bounded, targeted datasets — and see where in-situ data is sparse.</li>
+          <li>Open <b>Insights</b> (top bar) anytime to see how the four domains overlap across countries.</li>
         </ol>
         <div class="intro-btns">
           <button id="introTour">Take the guided tour</button>

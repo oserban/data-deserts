@@ -8,7 +8,18 @@
     "Ecology": "#4daf4a", "Hydro": "#377eb8",
     "Agriculture": "#ff7f00", "Public Health": "#e41a1c"
   };
-  var COUNT_COLOR = ["#3a4654", "#d7191c", "#fdae61", "#a6d96a", "#1a9641", "#0d6b2c"];
+  // Domain-count uses a PURPLE sequential ramp, deliberately distinct from the categorical
+  // domain hues (green/blue/orange/red) so the legend can't be confused with the domains.
+  var NONE = "#39424f";                                  // no data / desert
+  var DOMAIN_COUNT = [NONE, "#cbb3e3", "#a779cf", "#8347b5", "#5d2a8f"];   // 0..4 domains
+  var dsMax = 1;                                         // max active datasets per country (set each redraw)
+  // continuous light→deep purple for the dataset-count mode
+  function datasetColor(v) {
+    if (!v) return NONE;
+    var t = Math.min(1, v / (dsMax || 1));
+    var r = Math.round(231 - 157 * t), g = Math.round(220 - 191 * t), b = Math.round(243 - 115 * t);
+    return "rgb(" + r + "," + g + "," + b + ")";
+  }
   var ACCESS_GROUPS = ["Public", "Private", "Both"];
   var GBIF = window.GBIF_DENSITY || {};
 
@@ -75,16 +86,9 @@
       return densityColor(c);
     }
     var v = countryValue(iso);
-    if (state.mode === "single") return v ? DOMAIN_COLOR[state.singleDomain] : COUNT_COLOR[0];
-    if (state.mode === "datasets") {
-      if (v === 0) return COUNT_COLOR[0];
-      if (v <= 2) return COUNT_COLOR[1];
-      if (v <= 4) return COUNT_COLOR[2];
-      if (v <= 6) return COUNT_COLOR[3];
-      if (v <= 9) return COUNT_COLOR[4];
-      return COUNT_COLOR[5];
-    }
-    return COUNT_COLOR[Math.min(v, 4)];
+    if (state.mode === "single") return v ? DOMAIN_COLOR[state.singleDomain] : NONE;
+    if (state.mode === "datasets") return datasetColor(v);   // continuous
+    return DOMAIN_COUNT[Math.min(v, 4)];                      // categorical 0..4
   }
 
   // ---- map ----
@@ -161,7 +165,16 @@
   }
   function applyStyles() { layer.setStyle(styleFn); }
 
+  function recomputeScales() {                            // max active datasets per country
+    dsMax = 1;
+    WORLD_GEOJSON.features.forEach(function (f) {
+      var n = countryInfo(f.id).datasets.length;
+      if (n > dsMax) dsMax = n;
+    });
+  }
+
   function redraw() {
+    recomputeScales();
     applyStyles(); updateStats(); updateLegend();
     if (insightsOpen) renderInsights();
     syncHash();
@@ -252,13 +265,19 @@
     } else if (state.mode === "single") {
       el.innerHTML =
         '<div class="legend-row"><span class="box" style="background:' + DOMAIN_COLOR[state.singleDomain] + '"></span>' + state.singleDomain + ' present</div>' +
-        '<div class="legend-row"><span class="box" style="background:' + COUNT_COLOR[0] + '"></span>absent</div>';
+        '<div class="legend-row"><span class="box" style="background:' + NONE + '"></span>absent</div>';
     } else if (state.mode === "datasets") {
-      var bins = [["0", COUNT_COLOR[0]], ["1–2", COUNT_COLOR[1]], ["3–4", COUNT_COLOR[2]], ["5–6", COUNT_COLOR[3]], ["7–9", COUNT_COLOR[4]], ["10+", COUNT_COLOR[5]]];
-      el.innerHTML = bins.map(function (b) { return '<div class="legend-row"><span class="box" style="background:' + b[1] + '"></span>' + b[0] + ' datasets</div>'; }).join("");
+      // continuous scale (0 → current max)
+      el.innerHTML =
+        '<div class="legend-bar" style="background:linear-gradient(90deg,#e7dcf3,#5d2a8f)"></div>' +
+        '<div class="legend-ends"><span>1</span><span>' + dsMax + ' datasets</span></div>' +
+        '<div class="legend-row" style="margin-top:6px"><span class="box" style="background:' + NONE + '"></span>no data in active layers</div>';
     } else {
-      el.innerHTML = '<div class="legend-bar"></div><div class="legend-ends"><span>0 — desert</span><span>4 — rich</span></div>' +
-        '<div class="legend-row" style="margin-top:6px"><span class="box" style="background:' + COUNT_COLOR[0] + '"></span>no data in active layers</div>';
+      // categorical (only 5 possible values: 0..4 domains)
+      var labels = ["0 — none (desert)", "1 domain", "2 domains", "3 domains", "4 domains"];
+      el.innerHTML = labels.map(function (l, i) {
+        return '<div class="legend-row"><span class="box" style="background:' + DOMAIN_COUNT[i] + '"></span>' + l + '</div>';
+      }).join("");
     }
   }
 
@@ -547,8 +566,8 @@
       ctx.font = "11px sans-serif";
       labels.forEach(function (lab, i) {
         var x = 16 + i * 56, y = H - 30;
-        ctx.fillStyle = COUNT_COLOR[Math.min(i, 4)]; roundRect(ctx, x, y, 48, 18, 4); ctx.fill();
-        ctx.fillStyle = "#06151f"; ctx.fillText(lab + " dom", x + 6, y + 13);
+        ctx.fillStyle = DOMAIN_COUNT[Math.min(i, 4)]; roundRect(ctx, x, y, 48, 18, 4); ctx.fill();
+        ctx.fillStyle = "#fff"; ctx.fillText(lab + " dom", x + 6, y + 13);
       });
     }
   }
@@ -565,15 +584,15 @@
   var STORY = [
     { cap: "Start with <b>everything</b>. With all 18 datasets switched on, almost every country shows 3 or 4 domains — the world looks comfortably data-rich.",
       fn: function () { resetState(); state.mode = "domains"; syncControls(); } },
-    { cap: "But look closer. <b>No wealthy country has any public-health survey data</b> — DHS and MICS only run in low- and middle-income countries. The Global North is a health-data desert.",
+    { cap: "But look closer. The standardized open survey programmes here — <b>DHS, MICS, LSMS-ISA</b> — run only in low- and middle-income countries. Wealthy countries <i>do</i> have health data, through other national systems — so a blank here means <b>these specific open datasets are absent</b>, not that no data exists.",
       fn: function () { resetState(); state.mode = "single"; state.singleDomain = "Public Health"; syncControls(); } },
-    { cap: "Now strip away the <b>global products</b> — the satellites and reanalyses that blanket the planet by default — and keep only data someone actually collected on the ground.",
+    { cap: "Now switch off the datasets that <b>aim for global coverage</b> — both gridded models (climate, land cover, crops) <i>and</i> large aggregated databases like GBIF — to compare with the <b>bounded, targeted</b> collections (national surveys, regional projects).",
       fn: function () { resetState(); state.includeGlobal = false; state.mode = "domains"; syncControls(); } },
-    { cap: "Most of the map collapses into <b>total data deserts</b>. Only a couple of countries hold in-situ data in three domains at once.",
+    { cap: "Much of the map thins out. Only a couple of countries are covered by <b>targeted, bounded datasets</b> in three domains at once.",
       fn: function () { resetState(); state.includeGlobal = false; state.mode = "domains"; syncControls(); toggleInsights(false); } },
-    { cap: "Even 'global' biodiversity data is a mirage. GBIF's <b>billions of records cluster in the US and Europe</b>; across much of the tropics there is almost nothing.",
+    { cap: "And 'global' coverage can be an illusion. GBIF's <b>billions of biodiversity records cluster in the US and Europe</b>; across much of the tropics there is far less. Zoom in to see within-country gaps.",
       fn: function () { resetState(); state.mode = "density"; syncControls(); } },
-    { cap: "The real story is the <b>overlap between domains</b>. Require ground-truth data and Ecology &amp; Agriculture share almost no countries. The cross-domain map is nearly empty — that is the data desert.",
+    { cap: "The overlap between domains is revealing. Among the <b>bounded, targeted</b> datasets, Ecology &amp; Agriculture share almost no countries — cross-domain coverage is sparse, which is what makes integrated research hard.",
       fn: function () { resetState(); state.includeGlobal = false; state.mode = "domains"; syncControls(); toggleInsights(true); } }
   ];
   var storyEl = document.getElementById("story"), storyIdx = 0, playing = false, playTimer = null;
