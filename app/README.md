@@ -25,7 +25,12 @@ deserts appear.
 
 - **Colour the map by**: number of domains / number of datasets / a single domain /
   **public-health surveys (number)** / **public-health surveys (most recent)** /
-  **GBIF biodiversity record density** (real per-country occurrence counts).
+  **GBIF biodiversity record density** / **GRDC river-gauge density** (real per-country counts).
+- **Two live fine-grain heat layers** (top bar): **Biodiversity density** (GBIF occurrence tiles)
+  and **Gauge density** (GRDC's ~10,700 river-gauging stations). Both reveal *within-country*
+  patchiness — gauged vs. ungauged basins, well-sampled vs. blank regions — that the
+  country-level choropleths can't show. GRDC is the "GBIF of water": nominally global, really a
+  scatter of local stations, so it gets the same density view and patchy/footprint treatment.
 - **Click a country → public-health survey timeline.** Instead of just "has DHS / has MICS",
   it lists the actual individual surveys with years (e.g. *DHS 1990 · DHS 2003 · MIS 2010 …*),
   so you can see whether a country has one old survey or many recent ones. Sources: the live
@@ -97,3 +102,6 @@ instead of country-level approximations.
   the World Bank microdata catalogue (179 surveys / 78 countries), not the full MICS programme;
   missing rounds can be added in `build_data.py`. **LSMS-ISA waves are compiled/approximate.**
   Survey-level data lives in `data/dhs_surveys.json` and `data/mics_surveys.json`.
+- **GRDC gauges** come from a cached copy of the 2022 station catalogue (`data/grdc_stations.csv`,
+  ~10,700 stations). Countries are assigned by point-in-polygon, so a few coastal/near-border
+  stations may land in a neighbour. Coordinates are the river-network-snapped `newlat/newlon`.

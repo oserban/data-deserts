@@ -367,6 +367,63 @@ for iso in SURVEYS:                               # chronological, dedup identic
 
 n_surveys = sum(len(v) for v in SURVEYS.values())
 
+# ---------------------------------------------------------------------------
+# 3e. GRDC river-gauge stations — the "GBIF of water"
+# ---------------------------------------------------------------------------
+# GRDC is a nominally "global" discharge dataset, but it's really ~10,700 localized
+# gauging stations — same illusory-coverage problem as GBIF. We geolocate each station
+# (point-in-polygon vs the country map) to get per-country gauge density, and keep the
+# raw points for a fine-grain heat layer. Coords cached in data/grdc_stations.csv.
+import csv as _csv
+
+def _in_ring(x, y, ring):                         # ray-casting; ring = [[lon,lat],...]
+    inside = False; n = len(ring); j = n - 1
+    for i in range(n):
+        xi, yi = ring[i][0], ring[i][1]
+        xj, yj = ring[j][0], ring[j][1]
+        if ((yi > y) != (yj > y)) and (x < (xj - xi) * (y - yi) / (yj - yi) + xi):
+            inside = not inside
+        j = i
+    return inside
+
+_feat = []                                        # (iso3, polygons, bbox)
+for f in geo["features"]:
+    g = f["geometry"]
+    polys = [g["coordinates"]] if g["type"] == "Polygon" else g["coordinates"]
+    minx = miny = 1e9; maxx = maxy = -1e9
+    for poly in polys:
+        for x, y in poly[0]:
+            minx = min(minx, x); maxx = max(maxx, x); miny = min(miny, y); maxy = max(maxy, y)
+    _feat.append((f["id"], polys, (minx, miny, maxx, maxy)))
+
+def _country_of(lon, lat):
+    for fid, polys, (minx, miny, maxx, maxy) in _feat:
+        if lon < minx or lon > maxx or lat < miny or lat > maxy:
+            continue
+        for poly in polys:
+            if _in_ring(lon, lat, poly[0]) and not any(_in_ring(lon, lat, h) for h in poly[1:]):
+                return fid
+    return None
+
+GRDC_DENSITY = {}
+GRDC_POINTS = []
+for r in _csv.reader(open(os.path.join(HERE, "data", "grdc_stations.csv"))):
+    try:
+        lat = float(r[2]); lon = float(r[3])
+    except (ValueError, IndexError):
+        continue
+    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+        continue
+    GRDC_POINTS.append([round(lat, 3), round(lon, 3)])
+    iso = _country_of(lon, lat)
+    if iso:
+        GRDC_DENSITY[iso] = GRDC_DENSITY.get(iso, 0) + 1
+
+# which density map (if any) gates each dataset under the "patchy" toggle
+for ds in DATASETS:
+    ds["densityKey"] = "gbif" if ds["coverageType"] == "global-obs" else (
+        "grdc" if ds["name"] == "GRDC" else None)
+
 DOMAINS = ["Ecology", "Hydro", "Agriculture", "Public Health"]
 META = {
     "domains": DOMAINS,
@@ -383,6 +440,9 @@ META = {
     "gbifMax": max(GBIF_DENSITY.values()),
     "surveyCount": n_surveys,
     "surveyCountries": len(SURVEYS),
+    "grdcStations": len(GRDC_POINTS),
+    "grdcMax": max(GRDC_DENSITY.values()) if GRDC_DENSITY else 1,
+    "grdcCountries": len(GRDC_DENSITY),
 }
 
 # ---------------------------------------------------------------------------
@@ -404,6 +464,10 @@ with open(os.path.join(HERE, "data", "datasets.js"), "w") as fh:
     json.dump(GBIF_DENSITY, fh, ensure_ascii=False, separators=(",", ":"))
     fh.write(";\nwindow.SURVEYS = ")
     json.dump(SURVEYS, fh, ensure_ascii=False, separators=(",", ":"))
+    fh.write(";\nwindow.GRDC_DENSITY = ")
+    json.dump(GRDC_DENSITY, fh, ensure_ascii=False, separators=(",", ":"))
+    fh.write(";\nwindow.GRDC_POINTS = ")
+    json.dump(GRDC_POINTS, fh, ensure_ascii=False, separators=(",", ":"))
     fh.write(";\n")
 
 print("DHS  ->", len(DHS_ISO), "countries on map")

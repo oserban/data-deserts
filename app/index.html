@@ -111,15 +111,16 @@
   .pill{display:inline-block;font-size:10.5px;padding:1px 6px;border-radius:10px;border:1px solid var(--line);
         color:var(--muted)}
 
-  /* ---- gbif heat legend ---- */
-  #gbifLegend{position:absolute;right:14px;bottom:14px;z-index:1100;width:250px;display:none;
+  /* ---- heat legends (GBIF / GRDC) ---- */
+  #gbifLegend,#gaugeLegend{position:absolute;right:14px;bottom:14px;z-index:1100;width:250px;display:none;
               background:rgba(15,22,32,.96);border:1px solid var(--line);border-radius:11px;padding:12px 14px;
               box-shadow:0 10px 34px rgba(0,0,0,.55)}
-  #gbifLegend .gl-title{font-size:13px;font-weight:600;margin-bottom:8px}
-  #gbifLegend .gl-bar{height:13px;border-radius:4px;
+  #gaugeLegend{bottom:auto;top:108px}                 /* offset so both can show without overlap */
+  #gbifLegend .gl-title,#gaugeLegend .gl-title{font-size:13px;font-weight:600;margin-bottom:8px}
+  #gbifLegend .gl-bar,#gaugeLegend .gl-bar{height:13px;border-radius:4px;
        background:linear-gradient(90deg,#1a1208,#7a2d0a,#e8731c,#ffd34d,#fff6cf)}
-  #gbifLegend .gl-ends{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-top:3px}
-  #gbifLegend .gl-hint{font-size:11.5px;color:var(--muted);line-height:1.45;margin-top:8px}
+  #gbifLegend .gl-ends,#gaugeLegend .gl-ends{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-top:3px}
+  #gbifLegend .gl-hint,#gaugeLegend .gl-hint{font-size:11.5px;color:var(--muted);line-height:1.45;margin-top:8px}
 
   /* ---- story mode ---- */
   #story{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);z-index:1200;width:min(660px,calc(100% - 60px));
@@ -200,6 +201,7 @@
         <option value="surveys">Public-health surveys (number)</option>
         <option value="recency">Public-health surveys (most recent)</option>
         <option value="density">GBIF biodiversity record density</option>
+        <option value="grdc">GRDC river-gauge density</option>
       </select>
       <div id="singleWrap" style="margin-top:9px;display:none">
         <select id="singleDomain"></select>
@@ -221,10 +223,11 @@
       <label class="toggle" style="margin-top:9px">
         <input type="checkbox" id="patchy" />
         <span>
-          <span class="t-title">Biodiversity records are patchy</span>
-          <span class="t-desc">Global species databases (GBIF, BioTime…) nominally cover the
-            world, but records cluster in the US/Europe. Treat a country as having ecology data
-            only if its GBIF record count clears the threshold below.</span>
+          <span class="t-title">Record/station datasets are patchy</span>
+          <span class="t-desc">Some "global" datasets are really scattered local records:
+            species databases (GBIF, BioTime…) and river gauges (GRDC). With this on, a country
+            counts for ecology only if its GBIF records clear the threshold below, and for
+            hydrology only where GRDC actually has a gauge.</span>
         </span>
       </label>
       <div id="threshWrap" style="margin-top:10px;display:none">
@@ -284,6 +287,7 @@
       <button id="helpBtn" title="How to use this tool">Help</button>
       <button id="insightsBtn">Insights</button>
       <button id="gbifBtn" title="Live GBIF biodiversity record density — zoom in to see within-country patchiness">Biodiversity density</button>
+      <button id="gaugeBtn" title="GRDC river-gauge locations — the 'GBIF of water'; zoom in to see gauged vs ungauged basins">Gauge density</button>
       <button id="storyBtn">Guided tour</button>
       <button id="pngBtn" title="Download the current map as a PNG">Save image</button>
       <button id="linkBtn" title="Copy a link that reproduces this exact view">Share view</button>
@@ -301,6 +305,15 @@
       <div class="gl-hint">Each cell = density of species observations. <b>Zoom in</b> (scroll) to see
         within-country patchiness — e.g. the Amazon vs. interior Peru. The colour scale is
         <b>relative to the current zoom</b>, so compare patterns within a view, not across zooms.</div>
+    </div>
+
+    <div id="gaugeLegend" style="display:none">
+      <div class="gl-title">GRDC river gauges (10,701 stations)</div>
+      <div class="gl-bar" style="background:linear-gradient(90deg,#08203a,#1c6fae,#54c0e8,#d7f0ff)"></div>
+      <div class="gl-ends"><span>few / none</span><span>many</span></div>
+      <div class="gl-hint">Each glow = density of discharge-gauging stations. <b>Zoom in</b> to see
+        gauged vs. <b>ungauged basins</b> — like GBIF, this "global" dataset is really a
+        scatter of local stations.</div>
     </div>
 
     <div id="story">
@@ -376,6 +389,7 @@
   </div>
 
   <script src="vendor/leaflet.js"></script>
+  <script src="vendor/leaflet-heat.js"></script>
   <script src="data/world.js"></script>
   <script src="data/datasets.js"></script>
   <script src="app.js"></script>

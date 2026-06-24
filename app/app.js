@@ -22,6 +22,8 @@
   }
   var ACCESS_GROUPS = ["Public", "Private", "Both"];
   var GBIF = window.GBIF_DENSITY || {};
+  var GRDC = window.GRDC_DENSITY || {};
+  var GRDC_PTS = window.GRDC_POINTS || [];
   var SURVEYS = window.SURVEYS || {};
   var PROGRAM_COLOR = { "DHS": "#c0392b", "MIS": "#e0875b", "AIS": "#d98880",
                         "MICS": "#2980b9", "LSMS-ISA": "#27ae60" };
@@ -41,7 +43,7 @@
   var state = {
     mode: "domains", includeGlobal: true, patchy: false, threshLog: 6,
     year: META.yearMax, singleDomain: DOMAINS[0],
-    domains: {}, access: {}, highlight: null, matrixMode: "count", gbifHeat: false
+    domains: {}, access: {}, highlight: null, matrixMode: "count", gbifHeat: false, grdcHeat: false
   };
   DOMAINS.forEach(function (d) { state.domains[d] = true; });
   ACCESS_GROUPS.forEach(function (a) { state.access[a] = true; });
@@ -60,7 +62,8 @@
   }
   function coversCountry(ds, iso) {
     if (ds.coverage === "GLOBAL") {
-      if (state.patchy && ds.densityProxy) return (GBIF[iso] || 0) >= thresh();
+      if (state.patchy && ds.densityKey === "gbif") return (GBIF[iso] || 0) >= thresh();
+      if (state.patchy && ds.densityKey === "grdc") return (GRDC[iso] || 0) >= 1;  // has a gauge
       return true;
     }
     return ds.coverage.indexOf(iso) !== -1;
@@ -81,6 +84,7 @@
   }
   function countryValue(iso) {
     if (state.mode === "density") return GBIF[iso] || 0;
+    if (state.mode === "grdc") return GRDC[iso] || 0;
     if (state.mode === "surveys") return surveysFor(iso).length;
     if (state.mode === "recency") {
       var sv = surveysFor(iso);
@@ -99,12 +103,19 @@
     var r = Math.round(247 - 210 * t), g = Math.round(252 - 140 * t), b = Math.round(190 + 40 * t);
     return "rgb(" + r + "," + g + "," + b + ")";
   }
+  // log-scaled blue ramp for GRDC gauge density (matches the gauge legend gradient)
+  function grdcColor(v) {
+    if (!v) return "#2a3441";
+    var t = Math.log10(v) / Math.log10(META.grdcMax || 1);
+    return lerpColor(t, [8, 32, 58], [215, 240, 255]);
+  }
   function fillColor(iso) {
     if (state.mode === "density") {
       var c = GBIF[iso] || 0;
       if (state.patchy) return c >= thresh() ? "#1a9641" : (c ? "#d7191c" : "#2a3441");  // hard cutoff
       return densityColor(c);
     }
+    if (state.mode === "grdc") return grdcColor(GRDC[iso] || 0);
     var v = countryValue(iso);
     if (state.mode === "single") return v ? DOMAIN_COLOR[state.singleDomain] : NONE;
     if (state.mode === "datasets") return datasetColor(v);   // continuous
@@ -142,6 +153,18 @@
     "?srs=EPSG:3857&style=orangeHeat.point",
     { tileSize: 512, zoomOffset: -1, opacity: 0.78, pane: "gbifPane", maxNativeZoom: 14,
       updateWhenIdle: true, updateWhenZooming: false, keepBuffer: 2 });
+  // GRDC river gauges — no tile service exists, so we render the real station points
+  // (the "GBIF of water"): a blue heat glow of ~10,700 gauges, dense where rivers are
+  // monitored, dark over ungauged basins.
+  var grdcHeat = L.heatLayer(GRDC_PTS, {
+    radius: 10, blur: 13, minOpacity: 0.3, maxZoom: 8,
+    gradient: { 0.2: "#1c6fae", 0.45: "#54c0e8", 0.75: "#bfe9ff", 1: "#ffffff" } });
+  function anyHeat() { return state.gbifHeat || state.grdcHeat; }
+  function updateHeatBase() {
+    if (anyHeat()) { if (!map.hasLayer(cartoBase)) cartoBase.addTo(map); }
+    else if (map.hasLayer(cartoBase)) map.removeLayer(cartoBase);
+    applyStyles();
+  }
 
   (function graticule() {
     var lines = [];
@@ -166,6 +189,11 @@
           return '<b>' + feat.properties.name + '</b><br>' +
             (c ? c.toLocaleString() + ' GBIF records' : '<span style="color:#ff7b6b">no GBIF records</span>');
         }
+        if (state.mode === "grdc") {
+          var gc = GRDC[feat.id] || 0;
+          return '<b>' + feat.properties.name + '</b><br>' +
+            (gc ? gc.toLocaleString() + ' river gauge' + (gc > 1 ? 's' : '') : '<span style="color:#ff7b6b">no GRDC gauges</span>');
+        }
         if (state.mode === "surveys" || state.mode === "recency") {
           var sv = surveysFor(feat.id);
           if (!sv.length) return '<b>' + feat.properties.name + '</b><br><span style="color:#ff7b6b">no DHS/MICS/LSMS surveys</span>';
@@ -185,13 +213,16 @@
   }).addTo(map);
 
   function styleFn(feat) {
-    if (state.gbifHeat && !state.highlight) {
-      // transparent fills so the heatmap shows through; keep faint country outlines as a guide
+    if (anyHeat() && !state.highlight) {
+      // transparent fills so the heat layer shows through; keep faint country outlines as a guide
       return { fillColor: "#000", fillOpacity: 0, color: "#7f93a8", weight: 0.5, opacity: 0.55 };
     }
     if (state.highlight) {
       var ds = DATASETS.find(function (d) { return d.name === state.highlight; });
-      var on = ds && coversCountry(ds, feat.id);
+      // for station/record datasets, the real footprint is where data actually exists
+      var on;
+      if (ds && ds.densityKey) on = ((ds.densityKey === "grdc" ? GRDC : GBIF)[feat.id] || 0) > 0;
+      else on = ds && coversCountry(ds, feat.id);
       return { fillColor: on ? (DOMAIN_COLOR[ds.domains[0]] || "#5ec5ff") : "#2a3441",
                fillOpacity: on ? 0.9 : 0.18, color: on ? "#ffffff" : "#1b2734", weight: on ? 1.2 : 0.5 };
     }
@@ -279,7 +310,14 @@
   function showFootprint(name) {
     state.highlight = name;
     var ds = DATASETS.find(function (d) { return d.name === name; });
-    var n = ds.coverage === "GLOBAL" ? "every land country (global)" : ds.coverage.length + " countries";
+    var n;
+    if (ds.densityKey) {                                  // station/record dataset: show real presence
+      var dm = ds.densityKey === "grdc" ? GRDC : GBIF;
+      var k = WORLD_GEOJSON.features.filter(function (f) { return (dm[f.id] || 0) > 0; }).length;
+      n = "nominally global, but records exist in " + k + " countries";
+    } else {
+      n = ds.coverage === "GLOBAL" ? "every land country (global)" : ds.coverage.length + " countries";
+    }
     document.getElementById("fpText").innerHTML = "Footprint: <b>" + name + "</b> — " + n;
     fpBanner.style.display = "flex"; applyStyles();
   }
@@ -316,6 +354,11 @@
           '<div class="legend-ends"><span>few records</span><span>' + (META.gbifMax / 1e9).toFixed(1) + 'B</span></div>' +
           '<div class="legend-row" style="margin-top:6px"><span class="box" style="background:#2a3441"></span>no GBIF records</div>';
       }
+    } else if (state.mode === "grdc") {
+      el.innerHTML =
+        '<div class="legend-bar" style="background:linear-gradient(90deg,#08203a,#1c6fae,#54c0e8,#d7f0ff)"></div>' +
+        '<div class="legend-ends"><span>few gauges</span><span>' + META.grdcMax + '</span></div>' +
+        '<div class="legend-row" style="margin-top:6px"><span class="box" style="background:#2a3441"></span>no GRDC gauges</div>';
     } else if (state.mode === "single") {
       el.innerHTML =
         '<div class="legend-row"><span class="box" style="background:' + DOMAIN_COLOR[state.singleDomain] + '"></span>' + state.singleDomain + ' present</div>' +
@@ -366,19 +409,28 @@
     };
   });
 
-  // ---- GBIF live density heatmap toggle ----
+  // ---- live heat layers (biodiversity records & river gauges) ----
   var gbifBtn = document.getElementById("gbifBtn");
   gbifBtn.onclick = function () {
     state.gbifHeat = !state.gbifHeat;
     gbifBtn.classList.toggle("active", state.gbifHeat);
     document.getElementById("gbifLegend").style.display = state.gbifHeat ? "block" : "none";
     if (state.gbifHeat) {
-      cartoBase.addTo(map); gbifHeat.addTo(map);
-      toast("Live GBIF density on — scroll to zoom into any region to see within-country patchiness.  © GBIF.org, © CARTO", 5000);
-    } else {
-      map.removeLayer(gbifHeat); map.removeLayer(cartoBase);
-    }
-    applyStyles();
+      gbifHeat.addTo(map);
+      toast("Live GBIF biodiversity density on — zoom into any region to see within-country gaps.  © GBIF.org, © CARTO", 5000);
+    } else map.removeLayer(gbifHeat);
+    updateHeatBase();
+  };
+  var gaugeBtn = document.getElementById("gaugeBtn");
+  gaugeBtn.onclick = function () {
+    state.grdcHeat = !state.grdcHeat;
+    gaugeBtn.classList.toggle("active", state.grdcHeat);
+    document.getElementById("gaugeLegend").style.display = state.grdcHeat ? "block" : "none";
+    if (state.grdcHeat) {
+      grdcHeat.addTo(map);
+      toast("GRDC river gauges on — the 'GBIF of water'. Zoom in to see gauged vs. ungauged basins.  © GRDC / BfG, © CARTO", 5000);
+    } else map.removeLayer(grdcHeat);
+    updateHeatBase();
   };
 
   function renderInsights() {
@@ -638,7 +690,8 @@
   }
   function modeLabel() {
     return { domains: "domains with data", datasets: "dataset count", single: state.singleDomain,
-             surveys: "public-health surveys", recency: "most recent survey", density: "GBIF record density" }[state.mode];
+             surveys: "public-health surveys", recency: "most recent survey",
+             density: "GBIF record density", grdc: "GRDC gauge density" }[state.mode];
   }
   function roundRect(ctx, x, y, w, h, r) {
     ctx.beginPath();
