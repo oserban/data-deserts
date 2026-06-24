@@ -36,6 +36,10 @@ deserts appear.
   so you can see whether a country has one old survey or many recent ones. Sources: the live
   **DHS API**, the **World Bank microdata catalogue** for MICS, and compiled **LSMS-ISA** waves.
   The time slider also filters surveys, so you can watch them accumulate by year.
+- **Focus (top X%)**: on any density/count view, a slider that shows only the highest-ranked
+  X% of countries (and the densest X% of GRDC gauges), greying out the rest so hotspots stand
+  out instead of everything reading as "lit". Note: the live GBIF heat layer can't be
+  percentile-thresholded (it's server-rendered), only dimmed.
 - **The global layer**: include or exclude datasets that cover everywhere by construction.
 - **Biodiversity records are patchy**: global species databases (GBIF, BioTime…) nominally
   cover the world, but records cluster in the US/Europe. Switch this on and a country only

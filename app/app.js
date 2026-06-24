@@ -43,8 +43,13 @@
   var state = {
     mode: "domains", includeGlobal: true, patchy: false, threshLog: 6,
     year: META.yearMax, singleDomain: DOMAINS[0],
-    domains: {}, access: {}, highlight: null, matrixMode: "count", gbifHeat: false, grdcHeat: false
+    domains: {}, access: {}, highlight: null, matrixMode: "count", gbifHeat: false, grdcHeat: false,
+    focusPct: 100
   };
+  // colour modes that encode a magnitude (so a top-X% focus threshold is meaningful)
+  var MAGNITUDE_MODES = ["datasets", "surveys", "density", "grdc"];
+  function isMagnitudeMode() { return MAGNITUDE_MODES.indexOf(state.mode) !== -1; }
+  var focusCutoff = 0;          // min value to display (0 = show everything); set each redraw
   DOMAINS.forEach(function (d) { state.domains[d] = true; });
   ACCESS_GROUPS.forEach(function (a) { state.access[a] = true; });
 
@@ -110,6 +115,7 @@
     return lerpColor(t, [8, 32, 58], [215, 240, 255]);
   }
   function fillColor(iso) {
+    if (focusCutoff > 0 && isMagnitudeMode() && (countryValue(iso) || 0) < focusCutoff) return NONE;
     if (state.mode === "density") {
       var c = GBIF[iso] || 0;
       if (state.patchy) return c >= thresh() ? "#1a9641" : (c ? "#d7191c" : "#2a3441");  // hard cutoff
@@ -156,7 +162,17 @@
   // GRDC river gauges — no tile service exists, so we render the real station points
   // (the "GBIF of water"): a blue heat glow of ~10,700 gauges, dense where rivers are
   // monitored, dark over ungauged basins.
-  var grdcHeat = L.heatLayer(GRDC_PTS, {
+  // focus filter for the gauge heat: keep only points in the densest X% of 1° cells
+  function grdcHeatData() {
+    if (state.focusPct >= 100) return GRDC_PTS;
+    var bins = {};
+    GRDC_PTS.forEach(function (p) { var k = Math.floor(p[0]) + "_" + Math.floor(p[1]); bins[k] = (bins[k] || 0) + 1; });
+    var counts = Object.keys(bins).map(function (k) { return bins[k]; }).sort(function (a, b) { return b - a; });
+    var k = Math.max(1, Math.ceil(counts.length * state.focusPct / 100));
+    var cut = counts[Math.min(k - 1, counts.length - 1)];
+    return GRDC_PTS.filter(function (p) { return bins[Math.floor(p[0]) + "_" + Math.floor(p[1])] >= cut; });
+  }
+  var grdcHeat = L.heatLayer(grdcHeatData(), {
     radius: 10, blur: 13, minOpacity: 0.3, maxZoom: 8,
     gradient: { 0.2: "#1c6fae", 0.45: "#54c0e8", 0.75: "#bfe9ff", 1: "#ffffff" } });
   function anyHeat() { return state.gbifHeat || state.grdcHeat; }
@@ -230,7 +246,7 @@
   }
   function applyStyles() { layer.setStyle(styleFn); }
 
-  function recomputeScales() {                            // per-render max scales
+  function recomputeScales() {                            // per-render max scales + focus cutoff
     dsMax = 1; surveyMax = 1;
     WORLD_GEOJSON.features.forEach(function (f) {
       var n = countryInfo(f.id).datasets.length;
@@ -238,6 +254,15 @@
       var s = surveysFor(f.id).length;
       if (s > surveyMax) surveyMax = s;
     });
+    focusCutoff = 0;
+    if (state.focusPct < 100 && isMagnitudeMode()) {
+      var vals = WORLD_GEOJSON.features.map(function (f) { return countryValue(f.id); })
+        .filter(function (v) { return v > 0; }).sort(function (a, b) { return b - a; });
+      if (vals.length) {
+        var k = Math.max(1, Math.ceil(vals.length * state.focusPct / 100));
+        focusCutoff = vals[Math.min(k - 1, vals.length - 1)];   // show values >= this
+      }
+    }
   }
 
   function redraw() {
@@ -427,7 +452,7 @@
     gaugeBtn.classList.toggle("active", state.grdcHeat);
     document.getElementById("gaugeLegend").style.display = state.grdcHeat ? "block" : "none";
     if (state.grdcHeat) {
-      grdcHeat.addTo(map);
+      grdcHeat.setLatLngs(grdcHeatData()); grdcHeat.addTo(map);
       toast("GRDC river gauges on — the 'GBIF of water'. Zoom in to see gauged vs. ungauged basins.  © GRDC / BfG, © CARTO", 5000);
     } else map.removeLayer(grdcHeat);
     updateHeatBase();
@@ -547,8 +572,26 @@
   document.getElementById("mode").onchange = function (e) {
     state.mode = e.target.value;
     document.getElementById("singleWrap").style.display = state.mode === "single" ? "block" : "none";
-    redraw();
+    document.getElementById("focusWrap").style.display = isMagnitudeMode() ? "block" : "none";
+    redraw(); updFocusLabel();
   };
+
+  // focus / top-X% threshold
+  var focusEl = document.getElementById("focus");
+  function updFocusLabel() {
+    document.getElementById("focusVal").textContent = state.focusPct + "%";
+    var n = "";
+    if (state.focusPct < 100 && isMagnitudeMode() && focusCutoff > 0) {
+      var c = WORLD_GEOJSON.features.filter(function (f) { return countryValue(f.id) >= focusCutoff; }).length;
+      n = c + " countries shown";
+    }
+    document.getElementById("focusN").textContent = n;
+  }
+  function applyFocus() {
+    if (state.grdcHeat) grdcHeat.setLatLngs(grdcHeatData());
+    redraw(); updFocusLabel();
+  }
+  focusEl.oninput = function (e) { state.focusPct = parseInt(e.target.value, 10); applyFocus(); };
   var igEl = document.getElementById("includeGlobal");
   igEl.onchange = function (e) { state.includeGlobal = e.target.checked; redraw(); };
   var patchyEl = document.getElementById("patchy"), threshWrap = document.getElementById("threshWrap"),
@@ -575,7 +618,8 @@
     DOMAINS.forEach(function (d) { state.domains[d] = true; });
     ACCESS_GROUPS.forEach(function (a) { state.access[a] = true; });
     state.includeGlobal = true; state.patchy = false; state.mode = "domains";
-    state.year = META.yearMax; state.threshLog = 6; clearFootprint();
+    state.year = META.yearMax; state.threshLog = 6; state.focusPct = 100; clearFootprint();
+    if (state.grdcHeat) grdcHeat.setLatLngs(GRDC_PTS);
     syncControls(); detail.style.display = "none";
   }
   function syncControls() {
@@ -586,8 +630,10 @@
     threshEl.value = state.threshLog; updThreshLabel();
     document.getElementById("mode").value = state.mode;
     document.getElementById("singleWrap").style.display = state.mode === "single" ? "block" : "none";
+    document.getElementById("focusWrap").style.display = isMagnitudeMode() ? "block" : "none";
+    focusEl.value = state.focusPct;
     sd.value = state.singleDomain;
-    yearEl.value = state.year; updYearLabel();
+    yearEl.value = state.year; updYearLabel(); updFocusLabel();
   }
 
   // ---- shareable URL state ----
@@ -598,6 +644,7 @@
     p.set("g", state.includeGlobal ? 1 : 0);
     p.set("p", state.patchy ? 1 : 0);
     p.set("t", state.threshLog);
+    p.set("fo", state.focusPct);
     p.set("y", state.year);
     p.set("sd", state.singleDomain);
     p.set("d", DOMAINS.map(function (d) { return state.domains[d] ? 1 : 0; }).join(""));
@@ -613,6 +660,7 @@
     if (p.has("g")) state.includeGlobal = p.get("g") === "1";
     if (p.has("p")) state.patchy = p.get("p") === "1";
     if (p.has("t")) state.threshLog = parseFloat(p.get("t"));
+    if (p.has("fo")) state.focusPct = parseInt(p.get("fo"), 10);
     if (p.has("y")) state.year = parseInt(p.get("y"), 10);
     if (p.has("sd")) state.singleDomain = p.get("sd");
     if (p.has("d")) { var d = p.get("d"); DOMAINS.forEach(function (dom, k) { state.domains[dom] = d[k] !== "0"; }); }
