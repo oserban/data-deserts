@@ -292,10 +292,16 @@ for ds in DATASETS:
 # ---------------------------------------------------------------------------
 # GBIF nominally "covers the world", but occurrence records are hugely
 # concentrated in the US / Europe / Australia. We attach the real per-country
-# record counts (fetched from the GBIF API) as a proxy for biodiversity
-# *sampling effort*, so the tool can show that global ecology data is itself a
-# desert across much of the tropics. ISO2 (GBIF) -> ISO3 (map) via iso_codes.json.
-gbif_counts = json.load(open(os.path.join(HERE, "data", "gbif_counts.json")))   # ISO2 -> count
+# record counts as a proxy for biodiversity *sampling effort*, so the tool can
+# show that global ecology data is itself a desert across much of the tropics.
+# ISO2 (GBIF) -> ISO3 (map) via iso_codes.json.
+#
+# Prefer the CLEANED counts (GBIF quality filters applied — see GBIF_CLEANING.md),
+# produced by fetch_gbif_clean.py / clean_gbif.R. Fall back to the raw counts.
+_clean_path = os.path.join(HERE, "data", "gbif_counts_clean.json")
+_gbif_path = _clean_path if os.path.exists(_clean_path) else os.path.join(HERE, "data", "gbif_counts.json")
+gbif_counts = json.load(open(_gbif_path))                                       # ISO2 -> count
+print("GBIF counts:", "CLEANED" if _gbif_path == _clean_path else "raw (uncleaned)", "->", os.path.basename(_gbif_path))
 iso_tbl = json.load(open(os.path.join(HERE, "data", "iso_codes.json")))
 ISO2_TO_ISO3 = {c["alpha-2"]: c["alpha-3"] for c in iso_tbl}
 GBIF_DENSITY = {}
@@ -438,6 +444,7 @@ META = {
     "yearMax": YEAR_NOW,
     "gbifTotal": sum(GBIF_DENSITY.values()),
     "gbifMax": max(GBIF_DENSITY.values()),
+    "gbifCleaned": _gbif_path == _clean_path,
     "surveyCount": n_surveys,
     "surveyCountries": len(SURVEYS),
     "grdcStations": len(GRDC_POINTS),

@@ -90,13 +90,20 @@ instead of country-level approximations.
 | `data/datasets.js` | the 18 datasets + country coverage (generated) |
 | `data/world.js` | world country polygons, ISO3 (generated) |
 | `build_data.py` | rebuilds the data files from the spreadsheet |
-| `data/gbif_counts.json` | real GBIF per-country occurrence counts (fetched from the GBIF API) |
+| `data/gbif_counts.json` | raw GBIF per-country occurrence counts (from the GBIF API) |
+| `data/gbif_counts_clean.json` | **cleaned** GBIF counts (quality-filtered) — preferred by `build_data.py` |
+| `fetch_gbif_clean.py` / `clean_gbif.R` | regenerate the cleaned counts (see `GBIF_CLEANING.md`) |
+| `GBIF_CLEANING.md` | how the GBIF counts are cleaned, and why |
 | `data/iso_codes.json` | ISO2↔ISO3 lookup used to join GBIF counts to the map |
 | `vendor/` | bundled Leaflet |
 
 ## Caveats / editable assumptions
 
 - **Year ranges** (`YEARS` in `build_data.py`) are approximate data-coverage spans — refine them.
+- **GBIF counts are cleaned**: per-country GBIF totals are quality-filtered (georeferenced,
+  no geospatial issues, no fossils/living specimens) before use — this strips artefacts that
+  most inflate data-poor tropical countries (e.g. Afghanistan −91%, DR Congo −42%). Full method
+  and how to regenerate: **`GBIF_CLEANING.md`**.
 - **Patchy threshold & land-cover flags**: the GBIF density is used as a *proxy* for biodiversity
   sampling effort across all global record databases; the "land-cover isn't field data" rule
   (MapBiomas, ESA CCI) is a deliberate, editable stance in `build_data.py`.
