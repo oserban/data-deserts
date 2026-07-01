@@ -52,12 +52,61 @@
   .stat.desert b{color:#ff7b6b}
   .credit{font-size:11px;color:var(--muted);padding:14px 20px;line-height:1.5}
 
+  /* sticky, always-visible legend */
+  .legend-section{position:sticky;top:0;z-index:6;background:var(--panel);
+                  box-shadow:0 6px 14px -8px rgba(0,0,0,.6)}
+  .legend-section h2 .lg-mode{text-transform:none;letter-spacing:0;color:var(--text);font-weight:600;margin-left:6px}
+
+  /* year histogram (data available per year) */
+  .yearhist{display:flex;align-items:flex-end;gap:1px;height:46px;margin-bottom:8px}
+  .yearhist .yb{flex:1 1 0;min-width:0;background:#2c3e50;border-radius:1.5px 1.5px 0 0;min-height:2px}
+  .yearhist .yb.in{background:var(--accent)}
+  .rangelab{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin:2px 0}
+  .rangelab b{color:var(--text);font-variant-numeric:tabular-nums}
+
+  /* per-country score card in the detail panel */
+  .scorecard{display:flex;align-items:center;gap:14px;background:var(--panel2);border:1px solid var(--line);
+             border-radius:10px;padding:11px 13px;margin-top:10px}
+  .scorecard .sc-num{font-size:30px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums;color:var(--accent)}
+  .scorecard .sc-lab{font-size:11.5px;color:var(--muted);line-height:1.4}
+  .cdhist{display:flex;align-items:flex-end;gap:1px;height:34px;margin:10px 0 2px}
+  .cdhist .yb{flex:1 1 0;min-width:0;background:#33475c;border-radius:1.5px 1.5px 0 0;min-height:2px}
+  .cdhist .yb.in{background:#5ec5ff}
+
+  /* ---- simple "what you're seeing" cards ---- */
+  #modeCards{display:flex;flex-direction:column;gap:8px}
+  .modecard{display:flex;flex-direction:column;align-items:flex-start;gap:3px;text-align:left;
+            background:var(--panel2);border:1px solid var(--line);border-radius:9px;
+            padding:10px 12px;width:100%;cursor:pointer;transition:border-color .2s,background .2s}
+  .modecard:hover{border-color:var(--accent)}
+  .modecard.active{border-color:var(--accent);background:rgba(94,197,255,.14)}
+  .modecard .mc-title{font-size:13.5px;font-weight:600;color:var(--text)}
+  .modecard .mc-desc{font-size:11.5px;color:var(--muted);line-height:1.4}
+
+  /* promoted "on the ground" switch */
+  .toggle.bigswitch{border-color:var(--accent);background:rgba(94,197,255,.08)}
+
+  /* advanced expander */
+  details.adv{border-top:1px solid var(--line)}
+  details.adv>summary{padding:14px 20px;font-size:11px;text-transform:uppercase;letter-spacing:.8px;
+                      color:var(--muted);cursor:pointer;user-select:none;list-style:none}
+  details.adv>summary::-webkit-details-marker{display:none}
+  details.adv>summary::before{content:"\25B8  ";color:var(--accent)}
+  details.adv[open]>summary::before{content:"\25BE  "}
+  details.adv>summary:hover{color:var(--text)}
+
   /* ---- map ---- */
   #mapwrap{flex:1;position:relative;height:100%}
   #map{position:absolute;inset:0;background:
        radial-gradient(120% 120% at 50% 0%, #123049 0%, var(--ocean) 60%, #06151f 100%)}
   .leaflet-container{background:transparent}
   .leaflet-interactive{cursor:pointer;transition:fill .45s ease, fill-opacity .45s ease, stroke .15s, stroke-width .15s}
+
+  /* ---- persistent "what am I looking at" caption (bottom-centre, clear of the toolbar) ---- */
+  #mapCaption{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);z-index:900;
+              background:rgba(15,22,32,.94);border:1px solid var(--line);border-radius:9px;
+              padding:7px 15px;font-size:12.5px;color:var(--text);max-width:min(560px,56%);
+              text-align:center;line-height:1.4;box-shadow:0 6px 22px rgba(0,0,0,.45);pointer-events:none}
 
   /* ---- floating toolbar ---- */
   #toolbar{position:absolute;top:14px;left:14px;z-index:1000;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
@@ -69,8 +118,29 @@
   #search{background:rgba(15,22,32,.92);border:1px solid var(--line);border-radius:9px;padding:7px 11px;
           width:190px;color:var(--text);box-shadow:0 6px 22px rgba(0,0,0,.45)}
   #search::placeholder{color:var(--muted)}
-  #insightsBtn{box-shadow:0 6px 22px rgba(0,0,0,.45)}
   #insightsBtn.active{color:#fff;border-color:var(--accent);background:rgba(94,197,255,.2)}
+  #toolbar button{box-shadow:0 6px 22px rgba(0,0,0,.45)}
+  /* bright primary call-to-action (the tour) */
+  #toolbar button.primary{background:var(--accent);color:#06151f;border-color:var(--accent);font-weight:600}
+  #toolbar button.primary:hover{filter:brightness(1.08)}
+
+  /* "More ▾" dropdown menu */
+  .menu{position:relative}
+  #moreMenu{position:absolute;top:calc(100% + 6px);left:0;min-width:248px;display:none;flex-direction:column;
+            background:rgba(15,22,32,.97);border:1px solid var(--line);border-radius:10px;overflow:hidden;
+            box-shadow:0 12px 34px rgba(0,0,0,.55);z-index:1001}
+  .menu.open #moreMenu{display:flex}
+  #moreMenu button{background:none;border:none;border-radius:0;box-shadow:none;text-align:left;
+                   padding:10px 14px;font-size:12.5px;color:var(--muted);width:100%}
+  #moreMenu button:hover{color:var(--text);background:rgba(94,197,255,.12)}
+  #moreMenu button.active{color:#fff;background:rgba(94,197,255,.18)}
+  #moreMenu .menu-sep{height:1px;background:var(--line);margin:4px 0}
+
+  /* small ⓘ info badge with a plain-language tooltip */
+  .info{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;
+        border:1px solid var(--muted);color:var(--muted);font-size:9.5px;line-height:1;cursor:help;
+        margin-left:5px;vertical-align:middle;font-style:normal;font-weight:600}
+  .info:hover{border-color:var(--accent);color:var(--accent)}
 
   /* footprint banner */
   #fpBanner{position:absolute;left:14px;bottom:14px;z-index:1000;display:none;align-items:center;gap:10px;
@@ -187,9 +257,9 @@
   <div id="sidebar">
     <header>
       <h1><span class="dot"></span>Data Deserts</h1>
-      <div class="sub">How little do datasets from different domains overlap?
-        Each country is coloured by <b>how many of the four domains</b> have data there,
-        given the layers you switch on. Strip away the global products to reveal the deserts.</div>
+      <div class="sub">Where different kinds of research data exist — and where they don't.
+        Pick a <b>time window</b>, click a country to <b>score how much data</b> covers it, and switch
+        between the whole world and the <b>DHS survey countries</b>.</div>
     </header>
 
     <div class="section">
@@ -215,65 +285,67 @@
     </div>
 
     <div class="section">
-      <h2>The global layer</h2>
-      <label class="toggle">
-        <input type="checkbox" id="includeGlobal" checked />
+      <label class="toggle bigswitch">
+        <input type="checkbox" id="dhsOnly" />
         <span>
-          <span class="t-title">Include datasets that aim for global coverage</span>
-          <span class="t-desc">Datasets meant to span the whole world: gridded models
-            (climate, land cover, crops) <i>and</i> large aggregated databases (e.g. GBIF).
-            Many aren't truly complete — the biodiversity layer shows the gaps. Toggle off to
-            compare with bounded, targeted datasets (national surveys, regional projects).</span>
+          <span class="t-title">DHS countries only</span>
+          <span class="t-desc"><b>Off:</b> the whole world. <b>Turn on</b> to keep only the countries
+            covered by the DHS household-survey programme — the low- and middle-income focus of the
+            surveys — and grey out everywhere else.</span>
         </span>
       </label>
-      <label class="toggle" style="margin-top:9px">
-        <input type="checkbox" id="patchy" />
-        <span>
-          <span class="t-title">Record/station datasets are patchy</span>
-          <span class="t-desc">Some "global" datasets are really scattered local records:
-            species databases (GBIF, BioTime…) and river gauges (GRDC). With this on, a country
-            counts for ecology only if its GBIF records clear the threshold below, and for
-            hydrology only where GRDC actually has a gauge.</span>
-        </span>
-      </label>
-      <div id="threshWrap" style="margin-top:10px;display:none">
-        <div style="font-size:12px;color:var(--muted);margin-bottom:5px">
-          Min GBIF records to count: <b id="threshVal"></b></div>
-        <input type="range" id="thresh" min="3" max="8" step="0.25" value="6" style="width:100%;accent-color:var(--accent)" />
-      </div>
     </div>
 
-    <div class="section">
-      <h2>Time — data available by year</h2>
-      <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:6px">
-        <b id="yearVal" style="font-size:18px;font-variant-numeric:tabular-nums">2026</b>
-        <span class="count" id="yearActive"></span>
-      </div>
-      <input type="range" id="year" style="width:100%;accent-color:var(--accent)" />
-      <div class="legend-ends" style="margin-top:3px"><span id="yearMinL"></span><span id="yearMaxL"></span></div>
-    </div>
-
-    <div class="section">
-      <h2>Domains</h2>
-      <div id="domainFilters"></div>
-    </div>
-
-    <div class="section">
-      <h2>Access</h2>
-      <div id="accessFilters"></div>
-    </div>
-
-    <div class="section">
-      <h2>Legend</h2>
+    <div class="section legend-section">
+      <h2>Legend<span class="lg-mode" id="legendTitle"></span></h2>
       <div id="legend"></div>
     </div>
 
     <div class="section">
-      <h2>Coverage summary</h2>
-      <div id="stats"></div>
-      <div style="font-size:11px;color:var(--muted);margin-top:6px">Counted per country (180 on the map).</div>
-      <div style="margin-top:8px"><button class="link" id="reset">Reset all filters</button></div>
+      <h2>Time window — data available by year</h2>
+      <div id="yearHist" class="yearhist" title="How many datasets have data in each year"></div>
+      <div class="rangelab"><span>Showing <b id="yearRangeVal"></b></span><span class="count" id="yearActive"></span></div>
+      <div class="rangelab" style="margin-top:6px"><span>From</span><b id="yearFromVal"></b></div>
+      <input type="range" id="yearFrom" style="width:100%;accent-color:var(--accent)" />
+      <div class="rangelab" style="margin-top:4px"><span>To</span><b id="yearToVal"></b></div>
+      <input type="range" id="yearTo" style="width:100%;accent-color:var(--accent)" />
+      <div class="legend-ends" style="margin-top:3px"><span id="yearMinL"></span><span id="yearMaxL"></span></div>
     </div>
+
+    <details class="adv">
+      <summary>Advanced controls</summary>
+
+      <div class="section">
+        <h2>Record / station datasets<span class="info" title="Some 'global' datasets are really scattered local records — species observations (GBIF) and river gauges (GRDC). 'Patchy' means only counting a country where those records actually exist, instead of assuming worldwide coverage.">i</span></h2>
+        <label class="toggle">
+          <input type="checkbox" id="patchy" />
+          <span>
+            <span class="t-title">Record/station datasets are patchy</span>
+            <span class="t-desc">Some "global" datasets are really scattered local records:
+              species databases (GBIF, BioTime…) and river gauges (GRDC). With this on, a country
+              counts for ecology only if its GBIF records clear the threshold below, and for
+              hydrology only where GRDC actually has a gauge.</span>
+          </span>
+        </label>
+        <div id="threshWrap" style="margin-top:10px;display:none">
+          <div style="font-size:12px;color:var(--muted);margin-bottom:5px">
+            Min GBIF records to count: <b id="threshVal"></b></div>
+          <input type="range" id="thresh" min="3" max="8" step="0.25" value="6" style="width:100%;accent-color:var(--accent)" />
+        </div>
+      </div>
+
+      <div class="section">
+        <h2>Access</h2>
+        <div id="accessFilters"></div>
+      </div>
+
+      <div class="section">
+        <h2>Coverage summary</h2>
+        <div id="stats"></div>
+        <div style="font-size:11px;color:var(--muted);margin-top:6px">Counted per country (180 on the map).</div>
+        <div style="margin-top:8px"><button class="link" id="reset">Reset all filters</button></div>
+      </div>
+    </details>
 
     <div class="credit">
       Coverage is at <b>country level</b>, derived from the team's <i>Data Sources</i> inventory.
@@ -286,17 +358,27 @@
   <div id="mapwrap">
     <div id="map"></div>
 
+    <div id="mapCaption"></div>
+
     <div id="toolbar">
       <div class="pillbar" id="regions"></div>
       <input id="search" list="countryList" placeholder="Search a country…" autocomplete="off" />
       <datalist id="countryList"></datalist>
-      <button id="helpBtn" title="How to use this tool">Help</button>
-      <button id="insightsBtn">Insights</button>
-      <button id="gbifBtn" title="Live GBIF biodiversity record density — zoom in to see within-country patchiness">Biodiversity density</button>
-      <button id="gaugeBtn" title="GRDC river-gauge locations — the 'GBIF of water'; zoom in to see gauged vs ungauged basins">Gauge density</button>
-      <button id="storyBtn">Guided tour</button>
-      <button id="pngBtn" title="Download the current map as a PNG">Save image</button>
-      <button id="linkBtn" title="Copy a link that reproduces this exact view">Share view</button>
+      <button id="storyBtn" class="primary">▶ Take the tour</button>
+      <div class="menu">
+        <button id="moreBtn">More ▾</button>
+        <div id="moreMenu">
+          <button id="insightsBtn">Insights — how the data types overlap</button>
+          <div class="menu-sep"></div>
+          <button id="gbifBtn" title="Live density of species observations from GBIF — zoom in to see within-country gaps.">Biodiversity density (GBIF)</button>
+          <button id="gaugeBtn" title="River-flow gauging stations from GRDC — the 'GBIF of water'. Zoom in to see gauged vs. ungauged basins.">River-gauge density (GRDC)</button>
+          <div class="menu-sep"></div>
+          <button id="pngBtn" title="Download the current map as a PNG image">Save image (PNG)</button>
+          <button id="linkBtn" title="Copy a link that reproduces this exact view">Share this view (copy link)</button>
+          <div class="menu-sep"></div>
+          <button id="helpBtn" title="Reopen the welcome screen">Help &amp; welcome</button>
+        </div>
+      </div>
     </div>
 
     <div id="fpBanner">
@@ -337,23 +419,15 @@
 
     <div id="intro">
       <div class="intro-card">
-        <h2>Data Deserts</h2>
-        <p>An interactive map of how little the datasets from different research domains —
-          <b>ecology, hydrology, agriculture, public health</b> — overlap geographically.
-          The focus is on <i>whether data exists</i>, not its quality.</p>
-        <ol>
-          <li>Each country is shaded by <b>how many of the four domains have data there</b>
-            (grey = none, a data desert → deep purple = all four).</li>
-          <li><b>Click any country</b> to see exactly which datasets cover it.</li>
-          <li>In the left panel, switch <b>“datasets that aim for global coverage”</b> off to compare
-            them with the bounded, targeted datasets — and see where in-situ data is sparse.</li>
-          <li>Open <b>Insights</b> (top bar) anytime to see how the four domains overlap across countries.</li>
-        </ol>
+        <h2>Where does data exist — and where doesn't it?</h2>
+        <p>This map shows how many kinds of research data each country has. Pick a <b>time window</b>,
+          <b>click a country</b> to score how much data covers it, and switch to <b>DHS countries only</b>
+          to focus on where the household surveys run. The 60-second tour walks you through it.</p>
         <div class="intro-btns">
-          <button id="introTour">Take the guided tour</button>
-          <button id="introClose" class="ghost">Explore the map</button>
+          <button id="introTour">▶ Take the 60-second tour</button>
+          <button id="introClose" class="ghost">I'll explore myself</button>
         </div>
-        <div class="intro-foot">You can reopen this anytime with <b>Help</b> in the top bar.</div>
+        <div class="intro-foot">You can reopen this anytime with <b>Help</b> (under “More” in the top bar).</div>
       </div>
     </div>
 
@@ -374,10 +448,10 @@
       </div>
       <div class="grid">
         <div class="icol">
-          <h3>Cross-domain overlap
+          <h3>Cross-domain overlap<span class="info" title="How often two data types are available in the same country. 'Countries' = the raw number with both; 'Overlap %' = of all countries with either type, the share that have both (the Jaccard score, 0–100%).">i</span>
             <span class="pillbar" id="matrixMode" style="display:inline-flex;margin-left:8px;vertical-align:middle">
               <button data-m="count" class="active">Countries</button>
-              <button data-m="jaccard">Jaccard %</button>
+              <button data-m="jaccard">Overlap %</button>
             </span>
           </h3>
           <div id="matrix"></div>
