@@ -3,15 +3,13 @@
 (function () {
   "use strict";
 
+  var config = window.DataDeserts.config;
   var DOMAINS = META.domains;
-  var DOMAIN_COLOR = {
-    "Ecology": "#4daf4a", "Hydro": "#377eb8",
-    "Agriculture": "#ff7f00", "Public Health": "#e41a1c"
-  };
+  var DOMAIN_COLOR = config.domainColors;
   // Domain-count uses a PURPLE sequential ramp, deliberately distinct from the categorical
   // domain hues (green/blue/orange/red) so the legend can't be confused with the domains.
-  var NONE = "#39424f";                                  // no data / desert
-  var DOMAIN_COUNT = [NONE, "#cbb3e3", "#a779cf", "#8347b5", "#5d2a8f"];   // 0..4 domains
+  var NONE = config.noDataColor;                          // no data / desert
+  var DOMAIN_COUNT = config.domainCountColors;             // 0..4 domains
   var dsMax = 1;                                         // max active datasets per country (set each redraw)
   // continuous light→deep purple for the dataset-count mode
   function datasetColor(v) {
@@ -20,19 +18,18 @@
     var r = Math.round(231 - 157 * t), g = Math.round(220 - 191 * t), b = Math.round(243 - 115 * t);
     return "rgb(" + r + "," + g + "," + b + ")";
   }
-  var ACCESS_GROUPS = ["Public", "Private", "Both"];
+  var ACCESS_GROUPS = config.accessGroups;
   var GBIF = window.GBIF_DENSITY || {};
   var GRDC = window.GRDC_DENSITY || {};
   var GRDC_PTS = window.GRDC_POINTS || [];
   var SURVEYS = window.SURVEYS || {};
-  // DHS country set (from the DHS dataset's own coverage list) — drives the "DHS only" scope toggle
+  // The application is intentionally scoped to countries in the DHS dataset coverage list.
   var DHS_DS = DATASETS.find(function (d) { return /\bDHS\b/.test(d.name); });
   var DHS_SET = {};
   if (DHS_DS && Array.isArray(DHS_DS.coverage)) DHS_DS.coverage.forEach(function (i) { DHS_SET[i] = true; });
-  function countryVisible(iso) { return !state.dhsOnly || !!DHS_SET[iso]; }
+  function countryVisible(iso) { return !!DHS_SET[iso]; }
   function visibleFeatures() { return WORLD_GEOJSON.features.filter(function (f) { return countryVisible(f.id); }); }
-  var PROGRAM_COLOR = { "DHS": "#c0392b", "MIS": "#e0875b", "AIS": "#d98880",
-                        "MICS": "#2980b9", "LSMS-ISA": "#27ae60" };
+  var PROGRAM_COLOR = config.programColors;
   var surveyMax = 1;                                     // max surveys/country (set each redraw)
   // surveys for a country, respecting the time slider (only surveys up to the chosen year)
   function surveysFor(iso) {
@@ -51,20 +48,12 @@
     return "rgb(" + r + "," + g + "," + b + ")";
   }
 
-  var state = {
-    mode: "domains", includeGlobal: true, patchy: false, threshLog: 6,
-    yearFrom: META.yearMin, yearTo: META.yearMax, singleDomain: DOMAINS[0],
-    domains: {}, access: {}, highlight: null, matrixMode: "count", gbifHeat: false, grdcHeat: false,
-    focusPct: 100, dhsOnly: false
-  };
+  var state = window.DataDeserts.createState(META, DOMAINS, ACCESS_GROUPS);
   // colour modes that encode a magnitude (so a top-X% focus threshold is meaningful)
-  var MAGNITUDE_MODES = ["datasets", "surveys", "density", "grdc"];
+  var MAGNITUDE_MODES = config.magnitudeModes;
   function isMagnitudeMode() { return MAGNITUDE_MODES.indexOf(state.mode) !== -1; }
   var focusCutoff = 0;          // min value to display (0 = show everything); set each redraw
-  DOMAINS.forEach(function (d) { state.domains[d] = true; });
-  ACCESS_GROUPS.forEach(function (a) { state.access[a] = true; });
 
-  function thresh() { return Math.round(Math.pow(10, state.threshLog)); }
   function accessGroup(s) {
     if (/both/i.test(s)) return "Both";
     if (/private/i.test(s)) return "Private";
@@ -78,8 +67,6 @@
   }
   function coversCountry(ds, iso) {
     if (ds.coverage === "GLOBAL") {
-      if (state.patchy && ds.densityKey === "gbif") return (GBIF[iso] || 0) >= thresh();
-      if (state.patchy && ds.densityKey === "grdc") return (GRDC[iso] || 0) >= 1;  // has a gauge
       return true;
     }
     return ds.coverage.indexOf(iso) !== -1;
@@ -90,13 +77,20 @@
       if (!datasetActive(ds) || !coversCountry(ds, iso)) return;
       hits.push(ds);
       ds.domains.forEach(function (d) {
-        // strict mode: a land-cover raster is not biodiversity field data, so it
-        // doesn't by itself confer "Ecology" presence.
-        if (state.patchy && ds.landcover && d === "Ecology") return;
         if (state.domains[d]) domSet[d] = true;
       });
     });
     return { datasets: hits, domains: DOMAINS.filter(function (d) { return domSet[d]; }) };
+  }
+  function countryStatsTooltip(iso, name) {
+    var agricultureDatasets = countryInfo(iso).datasets.filter(function (dataset) {
+      return dataset.domains.indexOf("Agriculture") !== -1;
+    }).length;
+    return '<b>' + name + '</b><br>' +
+      'Ecology: ' + (GBIF[iso] || 0).toLocaleString() + ' GBIF records<br>' +
+      'Hydrology: ' + (GRDC[iso] || 0).toLocaleString() + ' GRDC gauges<br>' +
+      'Agriculture: ' + agricultureDatasets.toLocaleString() + ' active datasets<br>' +
+      'Public health: ' + surveysFor(iso).length.toLocaleString() + ' surveys';
   }
   function countryValue(iso) {
     if (state.mode === "density") return GBIF[iso] || 0;
@@ -129,7 +123,6 @@
     if (focusCutoff > 0 && isMagnitudeMode() && (countryValue(iso) || 0) < focusCutoff) return NONE;
     if (state.mode === "density") {
       var c = GBIF[iso] || 0;
-      if (state.patchy) return c >= thresh() ? "#1a9641" : (c ? "#d7191c" : "#2a3441");  // hard cutoff
       return densityColor(c);
     }
     if (state.mode === "grdc") return grdcColor(GRDC[iso] || 0);
@@ -210,34 +203,59 @@
         mouseout: function () { applyStyles(); },
         click: function () { openDetail(feat.id, feat.properties.name); }
       });
-      lyr.bindTooltip(function () {
-        if (state.mode === "density") {
-          var c = GBIF[feat.id] || 0;
-          return '<b>' + feat.properties.name + '</b><br>' +
-            (c ? c.toLocaleString() + ' GBIF records' : '<span style="color:#ff7b6b">no GBIF records</span>');
-        }
-        if (state.mode === "grdc") {
-          var gc = GRDC[feat.id] || 0;
-          return '<b>' + feat.properties.name + '</b><br>' +
-            (gc ? gc.toLocaleString() + ' river gauge' + (gc > 1 ? 's' : '') : '<span style="color:#ff7b6b">no GRDC gauges</span>');
-        }
-        if (state.mode === "surveys" || state.mode === "recency") {
-          var sv = surveysFor(feat.id);
-          if (!sv.length) return '<b>' + feat.properties.name + '</b><br><span style="color:#ff7b6b">no DHS/MICS/LSMS surveys</span>';
-          var last = sv[sv.length - 1];
-          return '<b>' + feat.properties.name + '</b><br>' + sv.length + ' survey' + (sv.length > 1 ? 's' : '') +
-            '<br>' + sv[0].year + '–' + last.year + ' · latest: ' + last.type + ' ' + last.year;
-        }
-        var info = countryInfo(feat.id);
-        var chips = info.domains.map(function (d) {
-          return '<span class="dom" style="background:' + DOMAIN_COLOR[d] + '"></span>' + d;
-        }).join("&nbsp; ");
-        return '<b>' + feat.properties.name + '</b><br>' +
-          (info.domains.length ? info.domains.length + ' / 4 domains<br>' + chips
-            : '<span style="color:#ff7b6b">no data in active layers</span>');
-      }, { className: "ctip leaflet-tooltip-own", sticky: true, direction: "top", opacity: 1 });
+      lyr.bindTooltip(function () { return countryStatsTooltip(feat.id, feat.properties.name); },
+        { className: "ctip leaflet-tooltip-own", sticky: true, direction: "top", opacity: 1 });
     }
   }).addTo(map);
+
+  var assessmentMarkers = {};
+  function yearlyDomainValues(iso, year) {
+    var values = { ecology: 0, hydrology: 0, agriculture: 0, health: 0 };
+    DATASETS.forEach(function (dataset) {
+      if (!datasetActiveAtYear(dataset, year) || !coversCountry(dataset, iso)) return;
+      dataset.domains.forEach(function (domain) {
+        if (domain === "Ecology") values.ecology++;
+        else if (domain === "Hydro") values.hydrology++;
+        else if (domain === "Agriculture") values.agriculture++;
+      });
+    });
+    values.health = (SURVEYS[iso] || []).filter(function (survey) { return survey.year === year; }).length;
+    return values;
+  }
+  function assessmentMarkerSize() {
+    return Math.max(40, Math.min(190, 40 + (map.getZoom() - 2) * 20));
+  }
+  function renderAssessmentMarkers() {
+    var markerSize = assessmentMarkerSize();
+    var assessmentOptions = {
+      features: visibleFeatures(), gbif: GBIF, grdc: GRDC,
+      surveysFor: surveysFor
+    };
+    if (state.yearlyHistograms) {
+      assessmentOptions.years = [];
+      for (var year = state.yearFrom; year <= state.yearTo; year++) assessmentOptions.years.push(year);
+      assessmentOptions.yearlyValues = yearlyDomainValues;
+    }
+    var assessment = window.DataDeserts.recordAssessment.create(assessmentOptions);
+    visibleFeatures().forEach(function (feature) {
+      var countryLayer = idToLayer[feature.id];
+      if (!countryLayer) return;
+      var icon = L.divIcon({
+        className: "assessment-div-icon",
+        html: assessment.markerHTML(feature.properties.name, feature.id, markerSize),
+        iconSize: [markerSize, markerSize], iconAnchor: [markerSize / 2, markerSize / 2]
+      });
+      var marker = assessmentMarkers[feature.id];
+      if (!marker) {
+        marker = L.marker(countryLayer.getBounds().getCenter(), { icon: icon, riseOnHover: true }).addTo(map);
+        marker.on("click", function () { openDetail(feature.id, feature.properties.name); });
+        marker.bindTooltip("", { className: "ctip leaflet-tooltip-own", direction: "top", opacity: 1 });
+        assessmentMarkers[feature.id] = marker;
+      } else marker.setIcon(icon);
+      marker.setTooltipContent(assessment.tooltipHTML(feature.properties.name, feature.id));
+    });
+  }
+  map.on("zoomend", renderAssessmentMarkers);
 
   function styleFn(feat) {
     if (anyHeat() && !state.highlight) {
@@ -255,7 +273,7 @@
     }
     if (!countryVisible(feat.id))                             // outside DHS scope: greyed out
       return { fillColor: "#0d141d", fillOpacity: 0.55, color: "#1b2734", weight: 0.4 };
-    return { fillColor: fillColor(feat.id), fillOpacity: 0.85, color: "#1b2734", weight: 0.6 };
+    return { fillColor: "#263443", fillOpacity: 0.38, color: "#607287", weight: 0.7 };
   }
   function applyStyles() { layer.setStyle(styleFn); }
 
@@ -280,7 +298,7 @@
 
   function redraw() {
     recomputeScales();
-    applyStyles(); updateStats(); updateLegend(); updateCaption();
+    applyStyles(); renderAssessmentMarkers(); updateLegend(); updateCaption();
     if (insightsOpen) renderInsights();
     syncHash();
   }
@@ -288,6 +306,7 @@
   // ---- persistent "what am I looking at" caption ----
   function updateCaption() {
     var base = {
+      assessment: "Overall record assessment — each segment is normalized within its own domain",
       domains: "Colour: how many of the 4 data types each country has",
       datasets: "Colour: number of datasets per country",
       single: "Colour: where " + state.singleDomain + " data exists",
@@ -298,7 +317,8 @@
     }[state.mode] || "";
     var win = state.yearFrom === state.yearTo ? state.yearFrom : state.yearFrom + "–" + state.yearTo;
     var cap = document.getElementById("mapCaption");
-    cap.textContent = base + "  ·  " + win + (state.dhsOnly ? "  ·  DHS countries only" : "");
+    cap.textContent = base + "  ·  " + win + "  ·  DHS countries only" +
+      (state.yearlyHistograms ? "  ·  one bucket per year; gaps are missing years" : "");
     // update the always-on legend title too
     var lt = document.getElementById("legendTitle");
     if (lt) lt.textContent = "— " + (modeLabel() || "");
@@ -339,26 +359,22 @@
     if (!state.access[accessGroup(ds.access)]) return false;
     return ds.domains.some(function (d) { return state.domains[d]; });
   }
-  function countryYearCount(iso, y) {
-    var n = 0;
-    DATASETS.forEach(function (ds) { if (datasetActiveAtYear(ds, y) && coversCountry(ds, iso)) n++; });
-    return n;
-  }
-  // headline "score" for a country = datasets covering it within the chosen window, plus a per-year histogram
+  // Headline score for a country within the chosen window.
   function countryScoreHTML(iso) {
     var score = countryInfo(iso).datasets.length;
     var win = state.yearFrom === state.yearTo ? state.yearFrom : state.yearFrom + "–" + state.yearTo;
-    var bars = "", maxN = 1, cache = [];
-    for (var y = META.yearMin; y <= META.yearMax; y++) { var c = countryYearCount(iso, y); cache.push([y, c]); if (c > maxN) maxN = c; }
-    cache.forEach(function (pc) {
-      var h = Math.round(100 * pc[1] / maxN), inWin = pc[0] >= state.yearFrom && pc[0] <= state.yearTo;
-      bars += '<div class="yb' + (inWin ? ' in' : '') + '" style="height:' + h + '%" title="' + pc[0] + ': ' + pc[1] + ' datasets"></div>';
-    });
     return '<div class="scorecard"><div class="sc-num">' + score + '</div>' +
       '<div class="sc-lab"><b>dataset' + (score === 1 ? '' : 's') + '</b> cover this country<br>in <b>' + win + '</b> &middot; ' +
-      countryInfo(iso).domains.length + ' / 4 domains</div></div>' +
-      '<div class="cdhist" title="Datasets available per year">' + bars + '</div>' +
-      '<div style="font-size:11px;color:var(--muted)">Datasets available per year — selected window highlighted.</div>';
+      countryInfo(iso).domains.length + ' / 4 domains</div></div>';
+  }
+
+  function countryHistoryHTML(iso) {
+    var years = [];
+    for (var year = state.yearFrom; year <= state.yearTo; year++) years.push(year);
+    return window.DataDeserts.recordAssessment.create({
+      features: visibleFeatures(), gbif: GBIF, grdc: GRDC, surveysFor: surveysFor,
+      years: years, yearlyValues: yearlyDomainValues
+    }).historyHTML(iso);
   }
 
   function openDetail(iso, name) {
@@ -368,11 +384,12 @@
     document.getElementById("dMeta").innerHTML =
       info.domains.length + " of 4 domains &middot; " + info.datasets.length + " dataset(s) active" + dens;
     var body = document.getElementById("dBody");
+    var historyHTML = countryHistoryHTML(iso);
     var scoreHTML = countryScoreHTML(iso);
     var svHTML = state.domains["Public Health"] ? surveyTimelineHTML(iso) : "";
-    body.innerHTML = scoreHTML + svHTML;
+    body.innerHTML = historyHTML + scoreHTML + svHTML;
     if (!info.datasets.length && !svHTML) {
-      body.innerHTML = scoreHTML + '<div class="empty">No active datasets cover this country in this window — a data desert.</div>';
+      body.innerHTML = historyHTML + scoreHTML + '<div class="empty">No active datasets cover this country in this window — a data desert.</div>';
     } else {
       DOMAINS.forEach(function (dom) {
         if (!state.domains[dom]) return;
@@ -419,37 +436,23 @@
   function clearFootprint() { state.highlight = null; fpBanner.style.display = "none"; applyStyles(); }
   document.getElementById("fpClear").onclick = clearFootprint;
 
-  // ---- stats ----
-  function domainDistribution() {
-    var dist = [0, 0, 0, 0, 0];
-    visibleFeatures().forEach(function (f) { dist[Math.min(countryInfo(f.id).domains.length, 4)]++; });
-    return dist;
-  }
-  function updateStats() {
-    var dist = domainDistribution(), total = visibleFeatures().length;
-    document.getElementById("stats").innerHTML =
-      '<div class="stat desert"><b>' + (dist[0] + dist[1]) + '</b> data deserts <span class="count">(0–1 domains, of ' + total + ')</span></div>' +
-      '<div class="stat"><b>' + dist[2] + '</b> with 2 domains</div>' +
-      '<div class="stat"><b>' + dist[3] + '</b> with 3 domains</div>' +
-      '<div class="stat"><b>' + dist[4] + '</b> with all 4 domains</div>';
-  }
-
   // ---- legend ----
   function updateLegend() {
     var el = document.getElementById("legend");
-    if (state.mode === "density") {
-      if (state.patchy) {
-        el.innerHTML =
-          '<div class="legend-row"><span class="box" style="background:#1a9641"></span>&ge; ' + thresh().toLocaleString() + ' records</div>' +
-          '<div class="legend-row"><span class="box" style="background:#d7191c"></span>below threshold (biodiversity desert)</div>' +
-          '<div class="legend-row"><span class="box" style="background:#2a3441"></span>no GBIF records</div>';
-      } else {
-        el.innerHTML =
-          '<div class="legend-bar" style="background:linear-gradient(90deg,#f7fcbe,#7fd0db,#1f6fbf,#0a2e6e)"></div>' +
-          '<div class="legend-ends"><span>few records</span><span>' + (META.gbifMax / 1e9).toFixed(1) + 'B</span></div>' +
-          '<div class="legend-row" style="margin-top:6px"><span class="box" style="background:#2a3441"></span>no GBIF records</div>' +
-          (META.gbifCleaned ? '<div style="font-size:11px;color:var(--muted);margin-top:6px">Counts are <b>quality-filtered</b>: georeferenced, no geospatial issues, no fossils/living specimens.</div>' : '');
-      }
+    if (state.mode === "assessment") {
+      el.innerHTML =
+        window.DataDeserts.recordAssessment.legendHTML() +
+        '<div class="legend-bar" style="margin-top:9px;background:linear-gradient(90deg,#d73027,#fee08b,#1a9850)"></div>' +
+        '<div class="legend-ends"><span>lower count</span><span>higher count</span></div>' +
+        '<div class="legend-row" style="margin-top:6px"><span class="box" style="background:#68737f"></span>No data / unavailable</div>' +
+        '<div style="font-size:11px;color:var(--muted);line-height:1.45;margin-top:7px">Red → yellow → green is log-normalized separately for each domain across DHS countries. Position identifies the domain.</div>' +
+        (state.yearlyHistograms ? '<div style="font-size:11px;color:var(--accent);line-height:1.45;margin-top:6px">Yearly view: each sector runs from the earliest selected year to the latest. Blank gaps are missing years.</div>' : '');
+    } else if (state.mode === "density") {
+      el.innerHTML =
+        '<div class="legend-bar" style="background:linear-gradient(90deg,#f7fcbe,#7fd0db,#1f6fbf,#0a2e6e)"></div>' +
+        '<div class="legend-ends"><span>few records</span><span>' + (META.gbifMax / 1e9).toFixed(1) + 'B</span></div>' +
+        '<div class="legend-row" style="margin-top:6px"><span class="box" style="background:#2a3441"></span>no GBIF records</div>' +
+        (META.gbifCleaned ? '<div style="font-size:11px;color:var(--muted);margin-top:6px">Counts are <b>quality-filtered</b>: georeferenced, no geospatial issues, no fossils/living specimens.</div>' : '');
     } else if (state.mode === "grdc") {
       el.innerHTML =
         '<div class="legend-bar" style="background:linear-gradient(90deg,#08203a,#1c6fae,#54c0e8,#d7f0ff)"></div>' +
@@ -640,67 +643,10 @@
     row.querySelector("input").onchange = function (e) { state.access[a] = e.target.checked; redraw(); };
     af.appendChild(row);
   });
-  var sd = document.getElementById("singleDomain");
-  DOMAINS.forEach(function (d) { var o = document.createElement("option"); o.value = d; o.textContent = d; sd.appendChild(o); });
-  sd.onchange = function (e) { state.singleDomain = e.target.value; redraw(); };
-
-  // keep the simple "What you're seeing" cards and the advanced <select> in sync
-  function syncModeUI() {
-    document.getElementById("mode").value = state.mode;
-    document.getElementById("singleWrap").style.display = state.mode === "single" ? "block" : "none";
-    document.getElementById("focusWrap").style.display = isMagnitudeMode() ? "block" : "none";
-    var cardKey = state.mode === "domains" ? "domains"
-      : state.mode === "density" ? "density"
-      : (state.mode === "single" && state.singleDomain === "Public Health") ? "single-health"
-      : null;                                  // an advanced-only mode → no card highlighted
-    document.querySelectorAll("#modeCards .modecard").forEach(function (b) {
-      b.classList.toggle("active", b.dataset.mode === cardKey);
-    });
-  }
-  document.querySelectorAll("#modeCards .modecard").forEach(function (b) {
-    b.onclick = function () {
-      if (b.dataset.mode === "single-health") {
-        state.mode = "single"; state.singleDomain = "Public Health"; sd.value = "Public Health";
-      } else {
-        state.mode = b.dataset.mode;
-      }
-      syncModeUI(); redraw(); updFocusLabel();
-    };
-  });
-
-  document.getElementById("mode").onchange = function (e) {
-    state.mode = e.target.value;
-    syncModeUI();
-    redraw(); updFocusLabel();
-  };
-
-  // focus / top-X% threshold
-  var focusEl = document.getElementById("focus");
-  function updFocusLabel() {
-    document.getElementById("focusVal").textContent = state.focusPct + "%";
-    var n = "";
-    if (state.focusPct < 100 && isMagnitudeMode() && focusCutoff > 0) {
-      var c = visibleFeatures().filter(function (f) { return countryValue(f.id) >= focusCutoff; }).length;
-      n = c + " countries shown";
-    }
-    document.getElementById("focusN").textContent = n;
-  }
-  function applyFocus() {
-    if (state.grdcHeat) grdcHeat.setLatLngs(grdcHeatData());
-    redraw(); updFocusLabel();
-  }
-  focusEl.oninput = function (e) { state.focusPct = parseInt(e.target.value, 10); applyFocus(); };
-  var dhsEl = document.getElementById("dhsOnly");
-  dhsEl.onchange = function (e) { state.dhsOnly = e.target.checked; redraw(); };
-  var patchyEl = document.getElementById("patchy"), threshWrap = document.getElementById("threshWrap"),
-      threshEl = document.getElementById("thresh"), threshVal = document.getElementById("threshVal");
-  function updThreshLabel() { threshVal.textContent = thresh().toLocaleString(); }
-  patchyEl.onchange = function (e) { state.patchy = e.target.checked; threshWrap.style.display = state.patchy ? "block" : "none"; redraw(); };
-  threshEl.oninput = function (e) { state.threshLog = parseFloat(e.target.value); updThreshLabel(); redraw(); };
-
   // time window — two sliders (from / to) + a per-year histogram of dataset availability
   var yearFromEl = document.getElementById("yearFrom"), yearToEl = document.getElementById("yearTo"),
-      yearActive = document.getElementById("yearActive"), yearHistEl = document.getElementById("yearHist");
+      yearActive = document.getElementById("yearActive"), yearHistEl = document.getElementById("yearHist"),
+      yearRangeControl = document.getElementById("yearRangeControl");
   [yearFromEl, yearToEl].forEach(function (el) { el.min = META.yearMin; el.max = META.yearMax; });
   yearFromEl.value = META.yearMin; yearToEl.value = META.yearMax;
   document.getElementById("yearMinL").textContent = META.yearMin;
@@ -726,6 +672,9 @@
       state.yearFrom === state.yearTo ? state.yearFrom : state.yearFrom + "–" + state.yearTo;
     var n = DATASETS.filter(inYearWindow).length;
     yearActive.textContent = n + " / " + DATASETS.length + " datasets";
+    var span = META.yearMax - META.yearMin || 1;
+    yearRangeControl.style.setProperty("--range-start", (100 * (state.yearFrom - META.yearMin) / span) + "%");
+    yearRangeControl.style.setProperty("--range-end", (100 * (state.yearTo - META.yearMin) / span) + "%");
     renderYearHist();
   }
   function onYearInput() {
@@ -737,64 +686,32 @@
     state.yearFrom = a; state.yearTo = b; updYearLabel(); redraw();
   }
   yearFromEl.oninput = onYearInput; yearToEl.oninput = onYearInput;
+  yearFromEl.onpointerdown = function () { yearFromEl.style.zIndex = 4; yearToEl.style.zIndex = 3; };
+  yearToEl.onpointerdown = function () { yearToEl.style.zIndex = 4; yearFromEl.style.zIndex = 2; };
+  var yearlyHistogramsEl = document.getElementById("yearlyHistograms");
+  yearlyHistogramsEl.onchange = function (event) {
+    state.yearlyHistograms = event.target.checked;
+    redraw();
+  };
 
-  document.getElementById("reset").onclick = function () { resetState(); redraw(); };
-
-  function resetState() {
-    DOMAINS.forEach(function (d) { state.domains[d] = true; });
-    ACCESS_GROUPS.forEach(function (a) { state.access[a] = true; });
-    state.includeGlobal = true; state.patchy = false; state.mode = "domains"; state.dhsOnly = false;
-    state.yearFrom = META.yearMin; state.yearTo = META.yearMax;
-    state.threshLog = 6; state.focusPct = 100; clearFootprint();
-    if (state.grdcHeat) grdcHeat.setLatLngs(GRDC_PTS);
-    syncControls(); detail.style.display = "none";
-  }
   function syncControls() {
     document.querySelectorAll('#accessFilters input').forEach(function (i, k) { i.checked = state.access[ACCESS_GROUPS[k]]; });
-    dhsEl.checked = state.dhsOnly;
-    patchyEl.checked = state.patchy; threshWrap.style.display = state.patchy ? "block" : "none";
-    threshEl.value = state.threshLog; updThreshLabel();
-    sd.value = state.singleDomain;
-    syncModeUI();
-    focusEl.value = state.focusPct;
-    yearFromEl.value = state.yearFrom; yearToEl.value = state.yearTo; updYearLabel(); updFocusLabel();
+    yearlyHistogramsEl.checked = state.yearlyHistograms;
+    yearFromEl.value = state.yearFrom; yearToEl.value = state.yearTo; updYearLabel();
   }
 
   // ---- shareable URL state ----
   var shareHash = "";
   function syncHash() {
-    var p = new URLSearchParams();
-    p.set("mode", state.mode);
-    p.set("g", state.includeGlobal ? 1 : 0);
-    p.set("p", state.patchy ? 1 : 0);
-    p.set("t", state.threshLog);
-    p.set("fo", state.focusPct);
-    p.set("yf", state.yearFrom);
-    p.set("yt", state.yearTo);
-    p.set("dh", state.dhsOnly ? 1 : 0);
-    p.set("sd", state.singleDomain);
-    p.set("d", DOMAINS.map(function (d) { return state.domains[d] ? 1 : 0; }).join(""));
-    p.set("a", ACCESS_GROUPS.map(function (a) { return state.access[a] ? 1 : 0; }).join(""));
-    shareHash = "#" + p.toString();
+    shareHash = window.DataDeserts.shareState.serialize(state, DOMAINS, ACCESS_GROUPS);
     // replaceState can throw on file:// in some browsers — never let it break redraw.
     try { history.replaceState(null, "", shareHash); } catch (e) { /* ignore */ }
   }
   function loadHash() {
-    if (!location.hash || location.hash.length < 2) return;
-    var p = new URLSearchParams(location.hash.slice(1));
-    if (p.has("mode")) state.mode = p.get("mode");
-    if (p.has("g")) state.includeGlobal = p.get("g") === "1";
-    if (p.has("p")) state.patchy = p.get("p") === "1";
-    if (p.has("t")) state.threshLog = parseFloat(p.get("t"));
-    if (p.has("fo")) state.focusPct = parseInt(p.get("fo"), 10);
-    if (p.has("yf")) state.yearFrom = parseInt(p.get("yf"), 10);
-    if (p.has("yt")) state.yearTo = parseInt(p.get("yt"), 10);
-    else if (p.has("y")) { state.yearFrom = META.yearMin; state.yearTo = parseInt(p.get("y"), 10); }  // back-compat
-    if (p.has("dh")) state.dhsOnly = p.get("dh") === "1";
-    if (p.has("sd")) state.singleDomain = p.get("sd");
-    if (p.has("d")) { var d = p.get("d"); DOMAINS.forEach(function (dom, k) { state.domains[dom] = d[k] !== "0"; }); }
-    if (p.has("a")) { var a = p.get("a"); ACCESS_GROUPS.forEach(function (ac, k) { state.access[ac] = a[k] !== "0"; }); }
-    syncControls();
+    if (window.DataDeserts.shareState.hydrate(location.hash, state, META, DOMAINS, ACCESS_GROUPS)) {
+      state.mode = "assessment";
+      syncControls();
+    }
   }
   function toast(msg, ms) {
     var t = document.getElementById("toast"); t.textContent = msg; t.classList.add("show");
@@ -839,7 +756,7 @@
       ctx.drawImage(img, sr.left - mr.left, sr.top - mr.top, sr.width, sr.height);
       drawOverlayChrome(ctx, W, H);
       var a = document.createElement("a");
-      a.download = "data-deserts-" + state.mode + "-" + state.yearFrom + "_" + state.yearTo + (state.dhsOnly ? "-dhs" : "") + ".png";
+      a.download = "data-deserts-" + state.mode + "-" + state.yearFrom + "_" + state.yearTo + "-dhs.png";
       a.href = canvas.toDataURL("image/png"); a.click();
       toast("PNG downloaded");
     };
@@ -852,7 +769,7 @@
     ctx.fillStyle = "#e7edf3"; ctx.font = "600 17px -apple-system,Segoe UI,Roboto,sans-serif";
     ctx.fillText("Data Deserts — cross-domain coverage", 24, 34);
     ctx.fillStyle = "#9fb0c0"; ctx.font = "12px -apple-system,Segoe UI,Roboto,sans-serif";
-    var sub = modeLabel() + "  ·  " + state.yearFrom + "–" + state.yearTo + (state.dhsOnly ? "  ·  DHS countries" : "") + (state.patchy ? "  ·  patchy" : "");
+    var sub = modeLabel() + "  ·  " + state.yearFrom + "–" + state.yearTo + "  ·  DHS countries";
     ctx.fillText(sub, 24, 54);
     // legend chip strip (domains / count)
     if (state.mode === "domains") {
@@ -866,7 +783,7 @@
     }
   }
   function modeLabel() {
-    return { domains: "domains with data", datasets: "dataset count", single: state.singleDomain,
+    return { assessment: "overall record assessment", domains: "domains with data", datasets: "dataset count", single: state.singleDomain,
              surveys: "public-health surveys", recency: "most recent survey",
              density: "GBIF record density", grdc: "GRDC gauge density" }[state.mode];
   }
@@ -876,52 +793,6 @@
     ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
   }
 
-  // ---- story mode ----
-  var STORY = [
-    { cap: "Start with <b>everything</b>. With all 18 datasets switched on, almost every country shows 3 or 4 domains — the world looks comfortably data-rich.",
-      fn: function () { resetState(); state.mode = "domains"; syncControls(); } },
-    { cap: "But look closer. The standardized open survey programmes here — <b>DHS, MICS, LSMS-ISA</b> — run only in low- and middle-income countries. Wealthy countries <i>do</i> have health data, through other national systems — so a blank here means <b>these specific open datasets are absent</b>, not that no data exists.",
-      fn: function () { resetState(); state.mode = "single"; state.singleDomain = "Public Health"; syncControls(); } },
-    { cap: "Now switch off the datasets that <b>aim for global coverage</b> — both gridded models (climate, land cover, crops) <i>and</i> large aggregated databases like GBIF — to compare with the <b>bounded, targeted</b> collections (national surveys, regional projects).",
-      fn: function () { resetState(); state.includeGlobal = false; state.mode = "domains"; syncControls(); } },
-    { cap: "Much of the map thins out. Only a couple of countries are covered by <b>targeted, bounded datasets</b> in three domains at once.",
-      fn: function () { resetState(); state.includeGlobal = false; state.mode = "domains"; syncControls(); toggleInsights(false); } },
-    { cap: "And 'global' coverage can be an illusion. GBIF's <b>billions of biodiversity records cluster in the US and Europe</b>; across much of the tropics there is far less. Zoom in to see within-country gaps.",
-      fn: function () { resetState(); state.mode = "density"; syncControls(); } },
-    { cap: "The overlap between domains is revealing. Among the <b>bounded, targeted</b> datasets, Ecology &amp; Agriculture share almost no countries — cross-domain coverage is sparse, which is what makes integrated research hard.",
-      fn: function () { resetState(); state.includeGlobal = false; state.mode = "domains"; syncControls(); toggleInsights(true); } }
-  ];
-  var storyEl = document.getElementById("story"), storyIdx = 0, playing = false, playTimer = null;
-  function showStory(i) {
-    storyIdx = (i + STORY.length) % STORY.length;
-    STORY[storyIdx].fn(); redraw();
-    document.getElementById("storyStep").textContent = "Step " + (storyIdx + 1) + " of " + STORY.length;
-    document.getElementById("storyCap").innerHTML = STORY[storyIdx].cap;
-  }
-  function openStory() {
-    storyEl.classList.add("open"); document.getElementById("storyBtn").classList.add("active");
-    document.getElementById("mapCaption").style.display = "none";   // the tour has its own caption
-    showStory(0);
-  }
-  function exitStory() {
-    storyEl.classList.remove("open"); document.getElementById("storyBtn").classList.remove("active");
-    document.getElementById("mapCaption").style.display = "";
-    stopPlay(); toggleInsights(false);
-  }
-  function stopPlay() { playing = false; clearInterval(playTimer); document.getElementById("storyPlay").textContent = "Play"; }
-  document.getElementById("storyBtn").onclick = function () { storyEl.classList.contains("open") ? exitStory() : openStory(); };
-  document.getElementById("storyNext").onclick = function () { stopPlay(); showStory(storyIdx + 1); };
-  document.getElementById("storyPrev").onclick = function () { stopPlay(); showStory(storyIdx - 1); };
-  document.getElementById("storyExit").onclick = exitStory;
-  document.getElementById("storyPlay").onclick = function () {
-    if (playing) { stopPlay(); return; }
-    playing = true; this.textContent = "Pause";
-    playTimer = setInterval(function () {
-      if (storyIdx === STORY.length - 1) { stopPlay(); return; }
-      showStory(storyIdx + 1);
-    }, 6500);
-  };
-
   // ---- intro / help overlay ----
   var introEl = document.getElementById("intro");
   function openIntro() { introEl.classList.add("open"); }
@@ -930,7 +801,6 @@
     try { localStorage.setItem("dd_seen", "1"); } catch (e) { /* file:// may block */ }
   }
   document.getElementById("introClose").onclick = closeIntro;
-  document.getElementById("introTour").onclick = function () { closeIntro(); openStory(); };
   document.getElementById("helpBtn").onclick = openIntro;
   function maybeShowIntro() {
     var seen = false;

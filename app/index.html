@@ -5,295 +5,26 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Data Deserts — cross-domain data coverage</title>
 <link rel="stylesheet" href="vendor/leaflet.css" />
-<style>
-  :root{
-    --bg:#0f1620; --panel:#172230; --panel2:#1f2d3d; --line:#2c3e50;
-    --text:#e7edf3; --muted:#9fb0c0; --accent:#5ec5ff;
-    --eco:#4daf4a; --hyd:#377eb8; --agr:#ff7f00; --hea:#e41a1c;
-    --ocean:#0a2233;
-  }
-  *{box-sizing:border-box}
-  html,body{height:100%;margin:0}
-  body{display:flex;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-       background:var(--bg);color:var(--text);overflow:hidden}
-
-  /* ---- sidebar ---- */
-  #sidebar{width:340px;min-width:340px;height:100%;background:var(--panel);
-           border-right:1px solid var(--line);display:flex;flex-direction:column;overflow-y:auto}
-  #sidebar header{padding:18px 20px 14px}
-  #sidebar h1{font-size:21px;margin:0 0 4px;letter-spacing:.2px;display:flex;align-items:center;gap:9px}
-  #sidebar h1 .dot{width:11px;height:11px;border-radius:50%;
-       background:radial-gradient(circle at 30% 30%,#ffd27a,#e07b39)}
-  #sidebar .sub{font-size:12.5px;color:var(--muted);line-height:1.5}
-  .section{padding:14px 20px;border-top:1px solid var(--line)}
-  .section h2{font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin:0 0 10px}
-  label.row{display:flex;align-items:center;gap:9px;padding:5px 0;font-size:13.5px;cursor:pointer;user-select:none}
-  label.row input{accent-color:var(--accent);width:15px;height:15px}
-  .swatch{width:12px;height:12px;border-radius:3px;flex:0 0 auto}
-  .count{margin-left:auto;font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums}
-  select,button{font:inherit;color:var(--text);background:var(--panel2);border:1px solid var(--line);
-                border-radius:7px;padding:7px 9px}
-  select{width:100%}
-  button{cursor:pointer}
-  button.link{background:none;border:none;color:var(--accent);padding:0;cursor:pointer;font-size:12.5px}
-  .toggle{display:flex;align-items:flex-start;gap:10px;background:var(--panel2);border:1px solid var(--line);
-          border-radius:9px;padding:11px;cursor:pointer;transition:border-color .2s}
-  .toggle:hover{border-color:var(--accent)}
-  .toggle input{margin-top:2px;accent-color:var(--accent);width:16px;height:16px}
-  .toggle .t-title{font-size:13.5px;font-weight:600}
-  .toggle .t-desc{font-size:11.5px;color:var(--muted);line-height:1.4;margin-top:2px}
-  .legend-row{display:flex;align-items:center;gap:9px;font-size:12.5px;padding:3px 0}
-  .legend-row .box{width:22px;height:14px;border-radius:3px;border:1px solid rgba(0,0,0,.25)}
-  .legend-bar{height:14px;border-radius:4px;margin:4px 0 6px;
-       background:linear-gradient(90deg,#d7191c,#fdae61,#a6d96a,#1a9641)}
-  .legend-ends{display:flex;justify-content:space-between;font-size:11px;color:var(--muted)}
-  .stat{display:flex;align-items:baseline;gap:8px;font-size:13px;padding:4px 0}
-  .stat b{font-size:17px;min-width:42px;text-align:right;font-variant-numeric:tabular-nums}
-  .stat.desert b{color:#ff7b6b}
-  .credit{font-size:11px;color:var(--muted);padding:14px 20px;line-height:1.5}
-
-  /* sticky, always-visible legend */
-  .legend-section{position:sticky;top:0;z-index:6;background:var(--panel);
-                  box-shadow:0 6px 14px -8px rgba(0,0,0,.6)}
-  .legend-section h2 .lg-mode{text-transform:none;letter-spacing:0;color:var(--text);font-weight:600;margin-left:6px}
-
-  /* year histogram (data available per year) */
-  .yearhist{display:flex;align-items:flex-end;gap:1px;height:46px;margin-bottom:8px}
-  .yearhist .yb{flex:1 1 0;min-width:0;background:#2c3e50;border-radius:1.5px 1.5px 0 0;min-height:2px}
-  .yearhist .yb.in{background:var(--accent)}
-  .rangelab{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin:2px 0}
-  .rangelab b{color:var(--text);font-variant-numeric:tabular-nums}
-
-  /* per-country score card in the detail panel */
-  .scorecard{display:flex;align-items:center;gap:14px;background:var(--panel2);border:1px solid var(--line);
-             border-radius:10px;padding:11px 13px;margin-top:10px}
-  .scorecard .sc-num{font-size:30px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums;color:var(--accent)}
-  .scorecard .sc-lab{font-size:11.5px;color:var(--muted);line-height:1.4}
-  .cdhist{display:flex;align-items:flex-end;gap:1px;height:34px;margin:10px 0 2px}
-  .cdhist .yb{flex:1 1 0;min-width:0;background:#33475c;border-radius:1.5px 1.5px 0 0;min-height:2px}
-  .cdhist .yb.in{background:#5ec5ff}
-
-  /* ---- simple "what you're seeing" cards ---- */
-  #modeCards{display:flex;flex-direction:column;gap:8px}
-  .modecard{display:flex;flex-direction:column;align-items:flex-start;gap:3px;text-align:left;
-            background:var(--panel2);border:1px solid var(--line);border-radius:9px;
-            padding:10px 12px;width:100%;cursor:pointer;transition:border-color .2s,background .2s}
-  .modecard:hover{border-color:var(--accent)}
-  .modecard.active{border-color:var(--accent);background:rgba(94,197,255,.14)}
-  .modecard .mc-title{font-size:13.5px;font-weight:600;color:var(--text)}
-  .modecard .mc-desc{font-size:11.5px;color:var(--muted);line-height:1.4}
-
-  /* promoted "on the ground" switch */
-  .toggle.bigswitch{border-color:var(--accent);background:rgba(94,197,255,.08)}
-
-  /* advanced expander */
-  details.adv{border-top:1px solid var(--line)}
-  details.adv>summary{padding:14px 20px;font-size:11px;text-transform:uppercase;letter-spacing:.8px;
-                      color:var(--muted);cursor:pointer;user-select:none;list-style:none}
-  details.adv>summary::-webkit-details-marker{display:none}
-  details.adv>summary::before{content:"\25B8  ";color:var(--accent)}
-  details.adv[open]>summary::before{content:"\25BE  "}
-  details.adv>summary:hover{color:var(--text)}
-
-  /* ---- map ---- */
-  #mapwrap{flex:1;position:relative;height:100%}
-  #map{position:absolute;inset:0;background:
-       radial-gradient(120% 120% at 50% 0%, #123049 0%, var(--ocean) 60%, #06151f 100%)}
-  .leaflet-container{background:transparent}
-  .leaflet-interactive{cursor:pointer;transition:fill .45s ease, fill-opacity .45s ease, stroke .15s, stroke-width .15s}
-
-  /* ---- persistent "what am I looking at" caption (bottom-centre, clear of the toolbar) ---- */
-  #mapCaption{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);z-index:900;
-              background:rgba(15,22,32,.94);border:1px solid var(--line);border-radius:9px;
-              padding:7px 15px;font-size:12.5px;color:var(--text);max-width:min(560px,56%);
-              text-align:center;line-height:1.4;box-shadow:0 6px 22px rgba(0,0,0,.45);pointer-events:none}
-
-  /* ---- floating toolbar ---- */
-  #toolbar{position:absolute;top:14px;left:14px;z-index:1000;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-  .pillbar{display:flex;background:rgba(15,22,32,.92);border:1px solid var(--line);border-radius:9px;overflow:hidden;
-           box-shadow:0 6px 22px rgba(0,0,0,.45)}
-  .pillbar button{background:none;border:none;border-radius:0;padding:7px 11px;font-size:12.5px;color:var(--muted)}
-  .pillbar button:hover{color:var(--text);background:rgba(94,197,255,.12)}
-  .pillbar button.active{color:#fff;background:rgba(94,197,255,.22)}
-  #search{background:rgba(15,22,32,.92);border:1px solid var(--line);border-radius:9px;padding:7px 11px;
-          width:190px;color:var(--text);box-shadow:0 6px 22px rgba(0,0,0,.45)}
-  #search::placeholder{color:var(--muted)}
-  #insightsBtn.active{color:#fff;border-color:var(--accent);background:rgba(94,197,255,.2)}
-  #toolbar button{box-shadow:0 6px 22px rgba(0,0,0,.45)}
-  /* bright primary call-to-action (the tour) */
-  #toolbar button.primary{background:var(--accent);color:#06151f;border-color:var(--accent);font-weight:600}
-  #toolbar button.primary:hover{filter:brightness(1.08)}
-
-  /* "More ▾" dropdown menu */
-  .menu{position:relative}
-  #moreMenu{position:absolute;top:calc(100% + 6px);left:0;min-width:248px;display:none;flex-direction:column;
-            background:rgba(15,22,32,.97);border:1px solid var(--line);border-radius:10px;overflow:hidden;
-            box-shadow:0 12px 34px rgba(0,0,0,.55);z-index:1001}
-  .menu.open #moreMenu{display:flex}
-  #moreMenu button{background:none;border:none;border-radius:0;box-shadow:none;text-align:left;
-                   padding:10px 14px;font-size:12.5px;color:var(--muted);width:100%}
-  #moreMenu button:hover{color:var(--text);background:rgba(94,197,255,.12)}
-  #moreMenu button.active{color:#fff;background:rgba(94,197,255,.18)}
-  #moreMenu .menu-sep{height:1px;background:var(--line);margin:4px 0}
-
-  /* small ⓘ info badge with a plain-language tooltip */
-  .info{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;
-        border:1px solid var(--muted);color:var(--muted);font-size:9.5px;line-height:1;cursor:help;
-        margin-left:5px;vertical-align:middle;font-style:normal;font-weight:600}
-  .info:hover{border-color:var(--accent);color:var(--accent)}
-
-  /* footprint banner */
-  #fpBanner{position:absolute;left:14px;bottom:14px;z-index:1000;display:none;align-items:center;gap:10px;
-            background:rgba(15,22,32,.94);border:1px solid var(--accent);border-radius:9px;padding:8px 12px;
-            font-size:12.5px;box-shadow:0 6px 22px rgba(0,0,0,.45)}
-
-  /* hover tooltip */
-  .ctip{background:rgba(15,22,32,.96);border:1px solid var(--line);border-radius:8px;
-        color:var(--text);padding:8px 10px;font-size:12.5px;box-shadow:0 6px 20px rgba(0,0,0,.5)}
-  .ctip b{font-size:13px}
-  .ctip .dom{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px}
-  .leaflet-tooltip-own:before{display:none}
-
-  /* ---- detail panel ---- */
-  #detail{position:absolute;right:14px;top:14px;width:320px;max-height:calc(100% - 28px);overflow-y:auto;
-          background:var(--panel);border:1px solid var(--line);border-radius:12px;z-index:1100;
-          box-shadow:0 10px 40px rgba(0,0,0,.5);display:none}
-  #detail .dh{padding:14px 16px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel)}
-  #detail .dh h3{margin:0;font-size:16px}
-  #detail .dh .meta{font-size:12px;color:var(--muted);margin-top:3px}
-  #detail .close{position:absolute;right:12px;top:12px;cursor:pointer;color:var(--muted);font-size:18px;line-height:1}
-  #detail .dbody{padding:8px 16px 16px}
-  .domblock{margin-top:12px}
-  .domblock .dlabel{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;margin-bottom:5px}
-  .ds{font-size:12.5px;padding:6px 0;border-bottom:1px solid var(--panel2)}
-  .ds-top{display:flex;align-items:center;gap:6px}
-  .ds a{color:var(--accent);text-decoration:none}
-  .ds a:hover{text-decoration:underline}
-  .ds .fp{margin-left:auto;font-size:11px;border:1px solid var(--line);border-radius:6px;padding:2px 7px;
-          color:var(--muted);background:var(--panel2)}
-  .ds .fp:hover{color:#fff;border-color:var(--accent)}
-  .ds .tags{color:var(--muted);font-size:11px;margin-top:3px;padding-left:1px}
-  .sv-span{font-size:11px;color:var(--muted);margin:-2px 0 8px 19px}
-  .sv-chips{display:flex;flex-wrap:wrap;gap:5px;padding-left:1px}
-  .svchip{font-size:11px;padding:2px 7px;border:1px solid;border-radius:11px;
-          background:rgba(255,255,255,.04);white-space:nowrap;font-variant-numeric:tabular-nums}
-  .empty{font-size:12.5px;color:var(--muted);padding:8px 0 4px}
-  .pill{display:inline-block;font-size:10.5px;padding:1px 6px;border-radius:10px;border:1px solid var(--line);
-        color:var(--muted)}
-
-  /* ---- heat legends (GBIF / GRDC) ---- */
-  #gbifLegend,#gaugeLegend{position:absolute;right:14px;bottom:14px;z-index:1100;width:250px;display:none;
-              background:rgba(15,22,32,.96);border:1px solid var(--line);border-radius:11px;padding:12px 14px;
-              box-shadow:0 10px 34px rgba(0,0,0,.55)}
-  #gaugeLegend{bottom:auto;top:108px}                 /* offset so both can show without overlap */
-  #gbifLegend .gl-title,#gaugeLegend .gl-title{font-size:13px;font-weight:600;margin-bottom:8px}
-  #gbifLegend .gl-bar,#gaugeLegend .gl-bar{height:13px;border-radius:4px;
-       background:linear-gradient(90deg,#1a1208,#7a2d0a,#e8731c,#ffd34d,#fff6cf)}
-  #gbifLegend .gl-ends,#gaugeLegend .gl-ends{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-top:3px}
-  #gbifLegend .gl-hint,#gaugeLegend .gl-hint{font-size:11.5px;color:var(--muted);line-height:1.45;margin-top:8px}
-
-  /* ---- story mode ---- */
-  #story{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);z-index:1200;width:min(660px,calc(100% - 60px));
-         background:rgba(15,22,32,.96);border:1px solid var(--accent);border-radius:14px;padding:16px 20px 14px;
-         box-shadow:0 14px 50px rgba(0,0,0,.6);display:none}
-  #story.open{display:block;animation:fadeUp .35s ease}
-  @keyframes fadeUp{from{opacity:0;transform:translate(-50%,12px)}to{opacity:1;transform:translate(-50%,0)}}
-  .story-step{font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--accent);margin-bottom:5px}
-  .story-cap{font-size:15px;line-height:1.55;min-height:48px}
-  .story-cap b{color:#ffd27a}
-  .story-ctrl{display:flex;align-items:center;gap:8px;margin-top:12px}
-  .story-ctrl button{font-size:13px;padding:6px 13px}
-  #storyNext{background:var(--accent);color:#06151f;border-color:var(--accent);font-weight:600}
-
-  /* ---- intro / help overlay ---- */
-  #intro{position:absolute;inset:0;z-index:1400;display:none;align-items:center;justify-content:center;
-         background:rgba(6,12,20,.72);backdrop-filter:blur(3px)}
-  #intro.open{display:flex;animation:introIn .3s ease}
-  @keyframes introIn{from{opacity:0}to{opacity:1}}
-  .intro-card{width:min(560px,calc(100% - 48px));background:var(--panel);border:1px solid var(--line);
-              border-radius:16px;padding:26px 28px;box-shadow:0 24px 70px rgba(0,0,0,.6)}
-  .intro-card h2{margin:0 0 10px;font-size:24px}
-  .intro-card p{margin:0 0 14px;font-size:14px;color:var(--text);line-height:1.55}
-  .intro-card ol{margin:0 0 20px;padding-left:20px}
-  .intro-card li{font-size:13.5px;color:var(--text);line-height:1.5;margin-bottom:9px}
-  .intro-btns{display:flex;gap:10px}
-  .intro-btns button{font-size:14px;padding:10px 18px;border-radius:9px}
-  #introTour{background:var(--accent);color:#06151f;border-color:var(--accent);font-weight:600}
-  .intro-btns button.ghost{background:var(--panel2)}
-  .intro-foot{font-size:12px;color:var(--muted);margin-top:14px}
-
-  /* ---- toast ---- */
-  #toast{position:absolute;left:50%;top:64px;transform:translateX(-50%);z-index:1300;max-width:440px;text-align:center;line-height:1.4;
-         background:rgba(15,22,32,.96);border:1px solid var(--accent);border-radius:9px;padding:9px 15px;
-         font-size:13px;box-shadow:0 8px 26px rgba(0,0,0,.5);opacity:0;pointer-events:none;transition:opacity .3s}
-  #toast.show{opacity:1}
-
-  /* ---- insights drawer ---- */
-  #insights{position:absolute;left:0;right:0;bottom:0;z-index:1050;background:var(--panel);
-            border-top:1px solid var(--line);box-shadow:0 -12px 40px rgba(0,0,0,.5);
-            transform:translateY(100%);transition:transform .35s ease;padding:16px 20px 18px}
-  #insights.open{transform:translateY(0)}
-  #insights .ih{display:flex;align-items:center;gap:10px;margin-bottom:12px}
-  #insights .ih h2{margin:0;font-size:15px}
-  #insights .ih .hint{font-size:12px;color:var(--muted)}
-  #insights .close{margin-left:auto;cursor:pointer;color:var(--muted);font-size:18px}
-  #insights .grid{display:flex;gap:26px;flex-wrap:wrap}
-  .icol{flex:1;min-width:300px}
-  .icol h3{font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin:0 0 9px}
-  table.matrix{border-collapse:collapse;font-size:12px}
-  table.matrix th{font-weight:600;color:var(--muted);padding:4px 6px;text-align:center;font-size:11px}
-  table.matrix th.rowh{text-align:right;max-width:96px}
-  table.matrix td{width:62px;height:38px;text-align:center;border:2px solid var(--panel);border-radius:6px;
-                  font-variant-numeric:tabular-nums;color:#0c1118;font-weight:600;cursor:default}
-  .rank{display:flex;align-items:center;gap:8px;font-size:12.5px;padding:3px 0}
-  .rank .nm{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .rank .dchips{display:flex;gap:3px}
-  .rank .dchips i{width:9px;height:9px;border-radius:2px;display:inline-block}
-  .rank .num{color:var(--muted);font-variant-numeric:tabular-nums}
-  .rank.desert .num{color:#ff7b6b}
-</style>
+<link rel="stylesheet" href="styles/app.css" />
 </head>
 <body>
   <div id="sidebar">
     <header>
       <h1><span class="dot"></span>Data Deserts</h1>
-      <div class="sub">Where different kinds of research data exist — and where they don't.
-        Pick a <b>time window</b>, click a country to <b>score how much data</b> covers it, and switch
-        between the whole world and the <b>DHS survey countries</b>.</div>
+      <div class="sub">This map focuses only on countries covered by the
+        <a href="https://dhsprogram.com/who-we-are/about-us.cfm" target="_blank" rel="noopener">Demographic and Health Surveys (DHS) Program</a>.
+        DHS studies typically focus on low- and middle-income countries (LMICs), although coverage
+        is not identical to an income classification. See the official
+        <a href="https://dhsprogram.com/countries/" target="_blank" rel="noopener">DHS country list</a>
+        for included countries and the World Bank's
+        <a href="https://datahelpdesk.worldbank.org/knowledgebase/articles/906519-world-bank-country-and-lending-groups" target="_blank" rel="noopener">current income groups</a>
+        to identify coverage outside the current LMIC grouping.</div>
     </header>
 
-    <div class="section">
-      <h2>Colour the map by</h2>
-      <select id="mode">
-        <option value="domains">Number of domains with data</option>
-        <option value="datasets">Number of datasets</option>
-        <option value="single">A single domain (present / absent)</option>
-        <option value="surveys">Public-health surveys (number)</option>
-        <option value="recency">Public-health surveys (most recent)</option>
-        <option value="density">GBIF biodiversity record density</option>
-        <option value="grdc">GRDC river-gauge density</option>
-      </select>
-      <div id="singleWrap" style="margin-top:9px;display:none">
-        <select id="singleDomain"></select>
-      </div>
-      <div id="focusWrap" style="margin-top:11px;display:none">
-        <div style="font-size:12px;color:var(--muted);margin-bottom:5px">
-          Focus: show top <b id="focusVal">100%</b> <span id="focusN" class="count"></span></div>
-        <input type="range" id="focus" min="5" max="100" step="5" value="100" style="width:100%;accent-color:var(--accent)" />
-        <div style="font-size:11px;color:var(--muted);margin-top:3px">Greys out lower-ranked countries so hotspots stand out.</div>
-      </div>
-    </div>
-
-    <div class="section">
-      <label class="toggle bigswitch">
-        <input type="checkbox" id="dhsOnly" />
-        <span>
-          <span class="t-title">DHS countries only</span>
-          <span class="t-desc"><b>Off:</b> the whole world. <b>Turn on</b> to keep only the countries
-            covered by the DHS household-survey programme — the low- and middle-income focus of the
-            surveys — and grey out everywhere else.</span>
-        </span>
-      </label>
+    <div class="section assessment-intro">
+      <h2>Overall record assessment</h2>
+      <p>Each country has one four-part chart. Colour strength compares countries <b>within the same domain only</b>;
+        it does not compare biodiversity records with gauges or surveys.</p>
     </div>
 
     <div class="section legend-section">
@@ -305,53 +36,50 @@
       <h2>Time window — data available by year</h2>
       <div id="yearHist" class="yearhist" title="How many datasets have data in each year"></div>
       <div class="rangelab"><span>Showing <b id="yearRangeVal"></b></span><span class="count" id="yearActive"></span></div>
-      <div class="rangelab" style="margin-top:6px"><span>From</span><b id="yearFromVal"></b></div>
-      <input type="range" id="yearFrom" style="width:100%;accent-color:var(--accent)" />
-      <div class="rangelab" style="margin-top:4px"><span>To</span><b id="yearToVal"></b></div>
-      <input type="range" id="yearTo" style="width:100%;accent-color:var(--accent)" />
+      <div class="dual-range-labels">
+        <span>From <b id="yearFromVal"></b></span>
+        <span>To <b id="yearToVal"></b></span>
+      </div>
+      <div class="dual-range" id="yearRangeControl">
+        <div class="dual-range-track" aria-hidden="true"></div>
+        <input type="range" id="yearFrom" aria-label="First year in time window" />
+        <input type="range" id="yearTo" aria-label="Last year in time window" />
+      </div>
       <div class="legend-ends" style="margin-top:3px"><span id="yearMinL"></span><span id="yearMaxL"></span></div>
+      <div class="histogram-control">
+        <label class="toggle histogram-toggle">
+          <input type="checkbox" id="yearlyHistograms" />
+          <span class="t-title">Show yearly buckets in each donut</span>
+        </label>
+        <button type="button" class="histogram-info" aria-label="About yearly donut buckets: Splits every domain sector into one bucket per year in this window. Missing years are left blank. Health uses survey years; other domains use dataset coverage spans."
+          data-tooltip="Splits every domain sector into one bucket per year in this window. Missing years are left blank. Health uses survey years; other domains use dataset coverage spans.">i</button>
+      </div>
     </div>
 
     <details class="adv">
       <summary>Advanced controls</summary>
 
       <div class="section">
-        <h2>Record / station datasets<span class="info" title="Some 'global' datasets are really scattered local records — species observations (GBIF) and river gauges (GRDC). 'Patchy' means only counting a country where those records actually exist, instead of assuming worldwide coverage.">i</span></h2>
-        <label class="toggle">
-          <input type="checkbox" id="patchy" />
-          <span>
-            <span class="t-title">Record/station datasets are patchy</span>
-            <span class="t-desc">Some "global" datasets are really scattered local records:
-              species databases (GBIF, BioTime…) and river gauges (GRDC). With this on, a country
-              counts for ecology only if its GBIF records clear the threshold below, and for
-              hydrology only where GRDC actually has a gauge.</span>
-          </span>
-        </label>
-        <div id="threshWrap" style="margin-top:10px;display:none">
-          <div style="font-size:12px;color:var(--muted);margin-bottom:5px">
-            Min GBIF records to count: <b id="threshVal"></b></div>
-          <input type="range" id="thresh" min="3" max="8" step="0.25" value="6" style="width:100%;accent-color:var(--accent)" />
-        </div>
-      </div>
-
-      <div class="section">
         <h2>Access</h2>
         <div id="accessFilters"></div>
       </div>
 
-      <div class="section">
-        <h2>Coverage summary</h2>
-        <div id="stats"></div>
-        <div style="font-size:11px;color:var(--muted);margin-top:6px">Counted per country (180 on the map).</div>
-        <div style="margin-top:8px"><button class="link" id="reset">Reset all filters</button></div>
-      </div>
     </details>
 
     <div class="credit">
-      Coverage is at <b>country level</b>, derived from the team's <i>Data Sources</i> inventory.
-      Datasets that aim for global coverage span all land; targeted surveys (DHS, MICS, LSMS-ISA)
-      and regional products are mapped to their country lists. The focus is on <i>presence of these
-      specific datasets</i> — not data quality, and not all data that may exist elsewhere.
+      <h2>About the project</h2>
+      <p>This project grew out of the
+        <a href="https://www.imperial.ac.uk/news/259556/call-early-career-researchers-develop-healthy/" target="_blank" rel="noopener">European Talent Academy 2025</a>
+        programme as a collaboration between researchers at Imperial College London and Politecnico di Milano.</p>
+      <ul>
+        <li><a href="https://www.imperial.ac.uk/people/o.serban" target="_blank" rel="noopener">Ovidiu Șerban</a> — Imperial College London</li>
+        <li><a href="https://profiles.imperial.ac.uk/jessica.williams15" target="_blank" rel="noopener">Jessica Williams</a> — Imperial College London</li>
+        <li><a href="https://profiles.imperial.ac.uk/paraskevi.seferidi14" target="_blank" rel="noopener">Paraskevi Seferidi</a> — Imperial College London</li>
+        <li><a href="https://re.public.polimi.it/cris/rp/rp50671" target="_blank" rel="noopener">Nikolas Galli</a> — Politecnico di Milano</li>
+      </ul>
+      <p>The visualisation was developed with
+        <a href="https://www.linkedin.com/in/rose-cymbler/" target="_blank" rel="noopener">Rose Cymbler</a>,
+        who was a student and Data Visualisation Intern in 2026 when the visualisation project began.</p>
     </div>
   </div>
 
@@ -364,7 +92,6 @@
       <div class="pillbar" id="regions"></div>
       <input id="search" list="countryList" placeholder="Search a country…" autocomplete="off" />
       <datalist id="countryList"></datalist>
-      <button id="storyBtn" class="primary">▶ Take the tour</button>
       <div class="menu">
         <button id="moreBtn">More ▾</button>
         <div id="moreMenu">
@@ -404,28 +131,18 @@
         scatter of local stations.</div>
     </div>
 
-    <div id="story">
-      <div class="story-step" id="storyStep"></div>
-      <div class="story-cap" id="storyCap"></div>
-      <div class="story-ctrl">
-        <button id="storyPrev">‹ Back</button>
-        <button id="storyPlay">Play</button>
-        <button id="storyNext">Next ›</button>
-        <button id="storyExit" class="link" style="margin-left:6px">Exit</button>
-      </div>
-    </div>
-
     <div id="toast"></div>
 
     <div id="intro">
       <div class="intro-card">
         <h2>Where does data exist — and where doesn't it?</h2>
-        <p>This map shows how many kinds of research data each country has. Pick a <b>time window</b>,
-          <b>click a country</b> to score how much data covers it, and switch to <b>DHS countries only</b>
-          to focus on where the household surveys run. The 60-second tour walks you through it.</p>
+        <p>This map gives an overall, domain-segmented record assessment for countries included in the
+          <a href="https://dhsprogram.com/countries/" target="_blank" rel="noopener">DHS Program</a>.
+          Each segment is normalized only against the same domain in other DHS countries. Pick a
+          <b>time window</b> and <b>click a country</b> to inspect its underlying data.
+          Countries without DHS coverage remain greyed out.</p>
         <div class="intro-btns">
-          <button id="introTour">▶ Take the 60-second tour</button>
-          <button id="introClose" class="ghost">I'll explore myself</button>
+          <button id="introClose" class="ghost">Explore the map</button>
         </div>
         <div class="intro-foot">You can reopen this anytime with <b>Help</b> (under “More” in the top bar).</div>
       </div>
@@ -443,7 +160,7 @@
     <div id="insights">
       <div class="ih">
         <h2>Domain overlap &amp; deserts</h2>
-        <span class="hint">live — reacts to your filters and the global toggle</span>
+        <span class="hint">live — reacts to your filters</span>
         <span class="close" id="insightsClose">&times;</span>
       </div>
       <div class="grid">
@@ -472,6 +189,10 @@
   <script src="vendor/leaflet-heat.js"></script>
   <script src="data/world.js"></script>
   <script src="data/datasets.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/state.js"></script>
+  <script src="js/share-state.js"></script>
+  <script src="js/record-assessment.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

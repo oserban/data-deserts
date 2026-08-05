@@ -1,9 +1,11 @@
 # Data Deserts — cross-domain coverage map
 
-An interactive world map showing **how little data from different domains overlaps**
-geographically. Each country is coloured by how many of the four domains
-(Ecology, Hydrology, Agriculture, Public Health) have data there, given the layers
-you switch on. The focus is on **whether data exists**, not its quality.
+An interactive map of countries covered by the DHS Program. Each country carries a four-sector
+assessment chart for Ecology, Hydrology, Agriculture, and Public Health. For the first record-count
+implementation, Ecology uses GBIF occurrences, Hydrology uses GRDC gauges, and Public Health uses
+individual surveys. Each sector is normalized only against the same measure in other DHS countries;
+cross-domain magnitudes are deliberately not compared. Agriculture remains marked unavailable until a
+country-level record count is added.
 
 ## Run it
 
@@ -23,43 +25,36 @@ deserts appear.
 
 ## Controls
 
-- **Colour the map by**: number of domains / number of datasets / a single domain /
-  **public-health surveys (number)** / **public-health surveys (most recent)** /
-  **GBIF biodiversity record density** / **GRDC river-gauge density** (real per-country counts).
+- **Overall record assessment**: a segmented chart over each DHS country. Every domain uses the same
+  red → yellow → green convention, but its values are log-normalized independently. Grey means no data
+  or unavailable. Chart and label sizes grow with map zoom, with the country name in the centre.
+- **Yearly donut buckets**: an optional checkbox divides every sector into one angular bucket per year
+  in the selected window. Missing years remain blank. Public Health uses exact survey years; Ecology,
+  Hydrology, and Agriculture use the inventory's dataset coverage spans because annual record totals are
+  not yet bundled for those domains.
 - **Two live fine-grain heat layers** (top bar): **Biodiversity density** (GBIF occurrence tiles)
   and **Gauge density** (GRDC's ~10,700 river-gauging stations). Both reveal *within-country*
   patchiness — gauged vs. ungauged basins, well-sampled vs. blank regions — that the
-  country-level choropleths can't show. GRDC is the "GBIF of water": nominally global, really a
-  scatter of local stations, so it gets the same density view and patchy/footprint treatment.
+  country-level charts can't show. GRDC is the "GBIF of water": nominally global, but really a
+  scatter of local stations represented by its density view and dataset footprint.
 - **Click a country → public-health survey timeline.** Instead of just "has DHS / has MICS",
   it lists the actual individual surveys with years (e.g. *DHS 1990 · DHS 2003 · MIS 2010 …*),
   so you can see whether a country has one old survey or many recent ones. Sources: the live
   **DHS API**, the **World Bank microdata catalogue** for MICS, and compiled **LSMS-ISA** waves.
   The time slider also filters surveys, so you can watch them accumulate by year.
-- **Focus (top X%)**: on any density/count view, a slider that shows only the highest-ranked
-  X% of countries (and the densest X% of GRDC gauges), greying out the rest so hotspots stand
-  out instead of everything reading as "lit". Note: the live GBIF heat layer can't be
-  percentile-thresholded (it's server-rendered), only dimmed.
 - **The global layer**: include or exclude datasets that cover everywhere by construction.
-- **Biodiversity records are patchy**: global species databases (GBIF, BioTime…) nominally
-  cover the world, but records cluster in the US/Europe. Switch this on and a country only
-  counts as having ecology data if its GBIF record count clears the threshold slider — and
-  land-cover rasters (a remote-sensing product, not field data) stop counting as biodiversity
-  observations. Watch the tropics lose their "ecology" coverage.
 - **Time — data available by year**: a slider from 1900 to today. A dataset counts once its
   data coverage begins, so dragging forward shows data accumulating and deserts shrinking.
 - **Domains** and **Access**: filter which datasets count.
 - **Click a country** to list the actual datasets covering it, grouped by domain, with links,
-  coverage size, year span, and the country's GBIF record count.
+  coverage size, year span, and the country's GBIF record count. The detail panel begins with four
+  stacked linear year strips using the same normalization as the donut buckets.
 
 ## Map toolbar
 
 - **Region presets** (World / Africa / Asia / Europe / Americas) + **country search**.
 - **📊 Insights**: a drawer with the **domain co-occurrence matrix** (counts *or* Jaccard %),
   plus ranked "worst deserts" and "most data-rich" lists. All react live to the filters.
-- **▶ Story**: a guided 6-step walkthrough (all-on → no health data in the rich world →
-  strip globals → deserts appear → GBIF mirage → empty overlap matrix) with a Play button —
-  built for presenting to the team.
 - **🖼 PNG**: download the current map as an image for slides/papers.
 - **🔗 Link**: copy a URL that reproduces the exact current view (every filter is encoded in
   the link, so colleagues open the same state — works when served over http; on `file://`
@@ -85,8 +80,13 @@ instead of country-level approximations.
 
 | File | Purpose |
 |------|---------|
-| `index.html` | UI + layout |
-| `app.js` | map logic, filters, stats |
+| `index.html` | semantic UI structure and script loading order |
+| `styles/app.css` | application layout and visual styling |
+| `app.js` | map rendering and UI orchestration |
+| `js/config.js` | shared colours, filter groups, and mode configuration |
+| `js/state.js` | creation of the application's default state |
+| `js/share-state.js` | URL serialization and hydration for shareable views |
+| `js/record-assessment.js` | per-domain normalization and country chart rendering |
 | `data/datasets.js` | the 18 datasets + country coverage (generated) |
 | `data/world.js` | world country polygons, ISO3 (generated) |
 | `build_data.py` | rebuilds the data files from the spreadsheet |
@@ -104,9 +104,6 @@ instead of country-level approximations.
   no geospatial issues, no fossils/living specimens) before use — this strips artefacts that
   most inflate data-poor tropical countries (e.g. Afghanistan −91%, DR Congo −42%). Full method
   and how to regenerate: **`GBIF_CLEANING.md`**.
-- **Patchy threshold & land-cover flags**: the GBIF density is used as a *proxy* for biodiversity
-  sampling effort across all global record databases; the "land-cover isn't field data" rule
-  (MapBiomas, ESA CCI) is a deliberate, editable stance in `build_data.py`.
 - Country lists for DHS/MICS/LSMS-ISA exclude a few tiny island states absent from the
   low-resolution world map.
 - **Survey lists**: DHS is authoritative (DHS API). **MICS may be incomplete** — it comes from
