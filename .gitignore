@@ -1,5 +1,30 @@
 .DS_Store
 node_modules/
+dist/
 *.log
+__pycache__/
+~$*.xlsx
+venv/
 
 .idea/
+
+~$*
+*.zip
+
+processing/data/biotime.json
+processing/data/living_planet.json
+processing/data/predicts.json
+processing/data/dhs.json
+processing/data/dhs_report.json
+processing/data/mics.json
+processing/data/mics_report.json
+processing/data/lsms.json
+processing/data/lsms_report.json
+processing/data/gbif.json
+processing/data/gbif_report.json
+processing/data/lsms_isa.json
+processing/data/lsms_isa_report.json
+
+# Built from the ignored normalized datasets during deployment. The public
+# repository contains app/data/datasets.template.js only.
+app/data/datasets.js

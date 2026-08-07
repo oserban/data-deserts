@@ -1,115 +1,100 @@
-# Data Deserts — cross-domain coverage map
+# Data Deserts — biodiversity record coverage
 
-An interactive map of countries covered by the DHS Program. Each country carries a four-sector
-assessment chart for Ecology, Hydrology, Agriculture, and Public Health. For the first record-count
-implementation, Ecology uses GBIF occurrences, Hydrology uses GRDC gauges, and Public Health uses
-individual surveys. Each sector is normalized only against the same measure in other DHS countries;
-cross-domain magnitudes are deliberately not compared. Agriculture remains marked unavailable until a
-country-level record count is added.
+This static Leaflet app compares country/year record coverage from four ecology datasets, one
+agriculture dataset, and three public-health datasets:
+
+- BioTIME
+- Living Planet Database
+- PREDICTS
+- GBIF
+- LSMS-ISA agricultural file-row records
+- DHS participant counts
+- MICS participant counts
+- LSMS household-roster person records
+
+See [`../DATASETS.md`](../DATASETS.md) for source provenance, counting-unit definitions, cleaning,
+access constraints, and the distinction between missing records and confirmed zero counts.
+
+Only countries with DHS participant data are included in the assessment. MICS and ecology records
+are evaluated within that DHS country coverage; missing source data remains visibly missing.
+Hydrology remains a disabled placeholder.
 
 ## Run it
 
-Just double-click **`index.html`** — it opens in any browser, no install or internet
-needed (Leaflet, the world map, and the data are all bundled locally).
+Open `index.html` directly, or serve the repository with any static HTTP server. Leaflet, country
+boundaries, and generated data are bundled locally.
 
-## The story it tells
-
-- **Global layer ON** (default): almost every country shows 3–4 domains, but the entire
-  **Global North is missing Public Health** — DHS/MICS household surveys only run in LMICs.
-- **Global layer OFF**: strip away the "everywhere-by-default" gridded/remote-sensing
-  products and global record databases, and **~54 countries become total data deserts**;
-  only Brazil & Peru reach three in-situ domains. The cross-domain overlap nearly vanishes.
-
-Use the **"Include global-coverage datasets"** toggle live in a presentation to make the
-deserts appear.
+For production, run `npm run build` from the repository root and deploy `dist/`. The asset build
+combines the generated records, geometry, and app logic into one minified/mangled JavaScript file,
+minifies CSS, and omits source maps. This makes casual inspection harder but cannot make browser-side
+data confidential. The same command creates `data-deserts-vercel.zip` for direct upload, without an
+extra enclosing directory inside the archive.
 
 ## Controls
 
-- **Overall record assessment**: a segmented chart over each DHS country. Every domain uses the same
-  red → yellow → green convention, but its values are log-normalized independently. Grey means no data
-  or unavailable. Chart and label sizes grow with map zoom, with the country name in the centre.
-- **Yearly donut buckets**: an optional checkbox divides every sector into one angular bucket per year
-  in the selected window. Missing years remain blank. Public Health uses exact survey years; Ecology,
-  Hydrology, and Agriculture use the inventory's dataset coverage spans because annual record totals are
-  not yet bundled for those domains.
-- **Two live fine-grain heat layers** (top bar): **Biodiversity density** (GBIF occurrence tiles)
-  and **Gauge density** (GRDC's ~10,700 river-gauging stations). Both reveal *within-country*
-  patchiness — gauged vs. ungauged basins, well-sampled vs. blank regions — that the
-  country-level charts can't show. GRDC is the "GBIF of water": nominally global, but really a
-  scatter of local stations represented by its density view and dataset footprint.
-- **Click a country → public-health survey timeline.** Instead of just "has DHS / has MICS",
-  it lists the actual individual surveys with years (e.g. *DHS 1990 · DHS 2003 · MIS 2010 …*),
-  so you can see whether a country has one old survey or many recent ones. Sources: the live
-  **DHS API**, the **World Bank microdata catalogue** for MICS, and compiled **LSMS-ISA** waves.
-  The time slider also filters surveys, so you can watch them accumulate by year.
-- **The global layer**: include or exclude datasets that cover everywhere by construction.
-- **Time — data available by year**: a slider from 1900 to today. A dataset counts once its
-  data coverage begins, so dragging forward shows data accumulating and deserts shrinking.
-- **Domains** and **Access**: filter which datasets count.
-- **Click a country** to list the actual datasets covering it, grouped by domain, with links,
-  coverage size, year span, and the country's GBIF record count. The detail panel begins with four
-  stacked linear year strips using the same normalization as the donut buckets.
+- The two-ended time control filters exact country/year record counts.
+- The **Filters** section contains the time window and two icon state buttons: annual time bins
+  and dataset/category grouping. Each button changes icon and pressed styling when active, with its
+  full description available as a tooltip.
+- **Advanced filtering** contains category and individual-dataset selection. A category checkbox
+  toggles every source in that category, while nested checkboxes control individual datasets. All
+  datasets are selected by default.
+- The grouping icon switches between eight source-level sectors and three category-level sectors.
+  Category mode aggregates BioTIME, Living Planet, PREDICTS, and GBIF into Ecology, shows LSMS-ISA
+  as Agriculture, and combines DHS, MICS, and LSMS as Public Health; tooltips and country details
+  continue to show the underlying datasets separately.
+- The arrowed radial-chart legend adapts to the display mode. Dataset sectors use their identity colours;
+  grouped categories combine the identity colours of all datasets they contain. A separate red → yellow → green scale explains count
+  magnitude inside every sector.
+- Sector and legend ordering comes from generated metadata and is shared everywhere: BioTIME →
+  Living Planet → PREDICTS → GBIF → LSMS-ISA → DHS → MICS → LSMS in dataset mode, and Ecology →
+  Agriculture → Public Health in category mode.
+- Every in-scope country has an eight-sector radial coverage chart. Sector intensity is
+  log-normalized independently within its dataset. Every sector uses the same red → yellow → green
+  scale for low → average → high counts; grey means no records. Raw magnitudes are not compared
+  across sources.
+- **Annual time bins** divide each sector into one bin per selected year. Missing years stay
+  blank. Time-series intensities use a min–max scale calculated independently for each dataset from
+  all of that dataset's country-year observations, so the same value has the same intensity in every
+  country. Grouped categories receive an equivalent cross-country category scale.
+- Hovering shows the selected-source breakdown. Clicking shows one yearly strip per selected dataset
+  in dataset mode; category mode shows an aggregate category strip with a collapsible dataset breakdown.
+- Search and region buttons navigate the map. **Share view** preserves dataset and year filters in
+  the URL hash.
+- **Data & licences** opens source acknowledgements, provider terms, and the processed-bundle
+  redistribution notice. It is available on demand and is not shown at startup.
 
-## Map toolbar
+## Generated data
 
-- **Region presets** (World / Africa / Asia / Europe / Americas) + **country search**.
-- **📊 Insights**: a drawer with the **domain co-occurrence matrix** (counts *or* Jaccard %),
-  plus ranked "worst deserts" and "most data-rich" lists. All react live to the filters.
-- **🖼 PNG**: download the current map as an image for slides/papers.
-- **🔗 Link**: copy a URL that reproduces the exact current view (every filter is encoded in
-  the link, so colleagues open the same state — works when served over http; on `file://`
-  the state is written to the address bar).
+Run from the repository root:
 
-## Editing the data
-
-Everything comes from the team's `../Data Sources.xlsx`, encoded in `data/datasets.js`.
-Country coverage for the targeted surveys (DHS, MICS, LSMS-ISA) and regional products is
-stored as ISO3 lists in **`build_data.py`** so domain experts can correct them. After any
-edit re-run:
-
-```
-python3 build_data.py
+```sh
+python3 processing/build_data.py
 ```
 
-This regenerates `data/datasets.js` and `data/world.js`. The `coverageType` field
-(`gridded` / `global-obs` / `stations` / `regional`) and the `global` flag drive the
-global toggle, and are the natural hook for later swapping in **real gridded coverage**
-instead of country-level approximations.
+The build reads `processing/data/biotime.json`, `living_planet.json`, `predicts.json`, `dhs.json`,
+`mics.json`, `gbif.json`, `lsms_isa.json`, and `lsms.json`. Each file
+uses `{ISO3: {year: count}}`. It writes:
+
+- `data/world.js`: country polygons
+- `data/datasets.js`: separate source records, their aggregate, and summary metadata
+
+`data/datasets.js` is generated during protected deployment and ignored by Git because it contains
+processed records. `data/datasets.template.js` is the public, data-free schema reference committed
+to GitHub. The template is not loaded by the application.
+
+The generated metadata marks DHS as the sole scope dataset. The app suppresses all records and radial-chart
+markers outside its mapped country coverage; the combined aggregate, displayed year range, and
+per-dataset scope summaries use that same country scope. GRDC, inventory-spreadsheet, and
+access-control data are not included in the build.
 
 ## Files
 
 | File | Purpose |
-|------|---------|
-| `index.html` | semantic UI structure and script loading order |
-| `styles/app.css` | application layout and visual styling |
-| `app.js` | map rendering and UI orchestration |
-| `js/config.js` | shared colours, filter groups, and mode configuration |
-| `js/state.js` | creation of the application's default state |
-| `js/share-state.js` | URL serialization and hydration for shareable views |
-| `js/record-assessment.js` | per-domain normalization and country chart rendering |
-| `data/datasets.js` | the 18 datasets + country coverage (generated) |
-| `data/world.js` | world country polygons, ISO3 (generated) |
-| `build_data.py` | rebuilds the data files from the spreadsheet |
-| `data/gbif_counts.json` | raw GBIF per-country occurrence counts (from the GBIF API) |
-| `data/gbif_counts_clean.json` | **cleaned** GBIF counts (quality-filtered) — preferred by `build_data.py` |
-| `fetch_gbif_clean.py` / `clean_gbif.R` | regenerate the cleaned counts (see `GBIF_CLEANING.md`) |
-| `GBIF_CLEANING.md` | how the GBIF counts are cleaned, and why |
-| `data/iso_codes.json` | ISO2↔ISO3 lookup used to join GBIF counts to the map |
-| `vendor/` | bundled Leaflet |
-
-## Caveats / editable assumptions
-
-- **Year ranges** (`YEARS` in `build_data.py`) are approximate data-coverage spans — refine them.
-- **GBIF counts are cleaned**: per-country GBIF totals are quality-filtered (georeferenced,
-  no geospatial issues, no fossils/living specimens) before use — this strips artefacts that
-  most inflate data-poor tropical countries (e.g. Afghanistan −91%, DR Congo −42%). Full method
-  and how to regenerate: **`GBIF_CLEANING.md`**.
-- Country lists for DHS/MICS/LSMS-ISA exclude a few tiny island states absent from the
-  low-resolution world map.
-- **Survey lists**: DHS is authoritative (DHS API). **MICS may be incomplete** — it comes from
-  the World Bank microdata catalogue (179 surveys / 78 countries), not the full MICS programme;
-  missing rounds can be added in `build_data.py`. **LSMS-ISA waves are compiled/approximate.**
-  Survey-level data lives in `data/dhs_surveys.json` and `data/mics_surveys.json`.
-- **GRDC gauges** come from a cached copy of the 2022 station catalogue (`data/grdc_stations.csv`,
-  ~10,700 stations). Countries are assigned by point-in-polygon, so a few coastal/near-border
-  stations may land in a neighbour. Coordinates are the river-network-snapped `newlat/newlon`.
+|---|---|
+| `index.html` | Application structure and script loading |
+| `styles/app.css` | Layout and visual styling |
+| `app.js` | Dataset filtering, aggregation, map rendering, and URL state |
+| `data/datasets.js` | Generated separate and aggregated country/year counts |
+| `data/world.js` | Generated country polygons |
+| `vendor/` | Bundled Leaflet |

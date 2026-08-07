@@ -1,0 +1,8 @@
+# GBIF API client. The parser uses the 0.6.6 backbone-matching signature.
+pygbif==0.6.6
+
+# Imported directly by fetch_gbif.py and also used by pygbif.
+requests>=2.31,<3
+
+# Trusted CA bundle used by the DHS and PREDICTS HTTPS clients when available.
+certifi>=2024.2.2

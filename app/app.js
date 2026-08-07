@@ -1,816 +1,840 @@
-/* Data Deserts — interactive cross-domain coverage map.
-   Reads window.DATASETS, window.META, window.WORLD_GEOJSON, window.GBIF_DENSITY. */
+/* Data Deserts — country/year coverage across the generated dataset inventory. */
 (function () {
   "use strict";
 
-  var config = window.DataDeserts.config;
-  var DOMAINS = META.domains;
-  var DOMAIN_COLOR = config.domainColors;
-  // Domain-count uses a PURPLE sequential ramp, deliberately distinct from the categorical
-  // domain hues (green/blue/orange/red) so the legend can't be confused with the domains.
-  var NONE = config.noDataColor;                          // no data / desert
-  var DOMAIN_COUNT = config.domainCountColors;             // 0..4 domains
-  var dsMax = 1;                                         // max active datasets per country (set each redraw)
-  // continuous light→deep purple for the dataset-count mode
-  function datasetColor(v) {
-    if (!v) return NONE;
-    var t = Math.min(1, v / (dsMax || 1));
-    var r = Math.round(231 - 157 * t), g = Math.round(220 - 191 * t), b = Math.round(243 - 115 * t);
-    return "rgb(" + r + "," + g + "," + b + ")";
-  }
-  var ACCESS_GROUPS = config.accessGroups;
-  var GBIF = window.GBIF_DENSITY || {};
-  var GRDC = window.GRDC_DENSITY || {};
-  var GRDC_PTS = window.GRDC_POINTS || [];
-  var SURVEYS = window.SURVEYS || {};
-  // The application is intentionally scoped to countries in the DHS dataset coverage list.
-  var DHS_DS = DATASETS.find(function (d) { return /\bDHS\b/.test(d.name); });
-  var DHS_SET = {};
-  if (DHS_DS && Array.isArray(DHS_DS.coverage)) DHS_DS.coverage.forEach(function (i) { DHS_SET[i] = true; });
-  function countryVisible(iso) { return !!DHS_SET[iso]; }
-  function visibleFeatures() { return WORLD_GEOJSON.features.filter(function (f) { return countryVisible(f.id); }); }
-  var PROGRAM_COLOR = config.programColors;
-  var surveyMax = 1;                                     // max surveys/country (set each redraw)
-  // surveys for a country, respecting the time slider (only surveys up to the chosen year)
-  function surveysFor(iso) {
-    return (SURVEYS[iso] || []).filter(function (s) { return s.year >= state.yearFrom && s.year <= state.yearTo; });
-  }
-  // does a dataset's data-coverage span overlap the selected [yearFrom, yearTo] window?
-  function inYearWindow(ds) {
-    if (!ds.years) return true;
-    return !(ds.years[1] < state.yearFrom || ds.years[0] > state.yearTo);
-  }
-  function lerpColor(t, c0, c1) {
-    t = Math.max(0, Math.min(1, t));
-    var r = Math.round(c0[0] + (c1[0] - c0[0]) * t),
-        g = Math.round(c0[1] + (c1[1] - c0[1]) * t),
-        b = Math.round(c0[2] + (c1[2] - c0[2]) * t);
-    return "rgb(" + r + "," + g + "," + b + ")";
+  var datasetOrder = META.datasetOrder;
+  var scopeDatasets = META.scopeDatasets || [META.scopeDataset];
+  var scopeRecords = {};
+  scopeDatasets.forEach(function (key) {
+    Object.keys(DATASETS[key].records).forEach(function (iso) { scopeRecords[iso] = true; });
+  });
+  var state = {
+    yearFrom: META.yearMin, yearTo: META.yearMax, selected: {},
+    yearlyHistograms: false, groupedDonuts: false
+  };
+  // Bounding-box centres are unsuitable for antimeridian-spanning countries.
+  // Keep their donut over the inhabited/mainland landmass instead.
+  var MARKER_POSITIONS = {
+    RUS: [61.5, 90],
+    USA: [39.8, -98.6]
+  };
+  datasetOrder.forEach(function (key) { state.selected[key] = true; });
+
+  function selectedKeys() {
+    return datasetOrder.filter(function (key) { return state.selected[key]; });
   }
 
-  var state = window.DataDeserts.createState(META, DOMAINS, ACCESS_GROUPS);
-  // colour modes that encode a magnitude (so a top-X% focus threshold is meaningful)
-  var MAGNITUDE_MODES = config.magnitudeModes;
-  function isMagnitudeMode() { return MAGNITUDE_MODES.indexOf(state.mode) !== -1; }
-  var focusCutoff = 0;          // min value to display (0 = show everything); set each redraw
-
-  function accessGroup(s) {
-    if (/both/i.test(s)) return "Both";
-    if (/private/i.test(s)) return "Private";
-    return "Public";
-  }
-  function datasetActive(ds) {
-    if (!state.includeGlobal && ds.global) return false;
-    if (!inYearWindow(ds)) return false;                          // time-window filter
-    if (!state.access[accessGroup(ds.access)]) return false;
-    return ds.domains.some(function (d) { return state.domains[d]; });
-  }
-  function coversCountry(ds, iso) {
-    if (ds.coverage === "GLOBAL") {
-      return true;
-    }
-    return ds.coverage.indexOf(iso) !== -1;
-  }
-  function countryInfo(iso) {
-    var hits = [], domSet = {};
-    DATASETS.forEach(function (ds) {
-      if (!datasetActive(ds) || !coversCountry(ds, iso)) return;
-      hits.push(ds);
-      ds.domains.forEach(function (d) {
-        if (state.domains[d]) domSet[d] = true;
-      });
+  function categoryOrder() {
+    return META.categoryOrder.filter(function (domain) {
+      return datasetOrder.some(function (key) { return DATASETS[key].domain === domain; });
     });
-    return { datasets: hits, domains: DOMAINS.filter(function (d) { return domSet[d]; }) };
-  }
-  function countryStatsTooltip(iso, name) {
-    var agricultureDatasets = countryInfo(iso).datasets.filter(function (dataset) {
-      return dataset.domains.indexOf("Agriculture") !== -1;
-    }).length;
-    return '<b>' + name + '</b><br>' +
-      'Ecology: ' + (GBIF[iso] || 0).toLocaleString() + ' GBIF records<br>' +
-      'Hydrology: ' + (GRDC[iso] || 0).toLocaleString() + ' GRDC gauges<br>' +
-      'Agriculture: ' + agricultureDatasets.toLocaleString() + ' active datasets<br>' +
-      'Public health: ' + surveysFor(iso).length.toLocaleString() + ' surveys';
-  }
-  function countryValue(iso) {
-    if (state.mode === "density") return GBIF[iso] || 0;
-    if (state.mode === "grdc") return GRDC[iso] || 0;
-    if (state.mode === "surveys") return surveysFor(iso).length;
-    if (state.mode === "recency") {
-      var sv = surveysFor(iso);
-      return sv.length ? sv[sv.length - 1].year : 0;     // most recent survey year
-    }
-    var info = countryInfo(iso);
-    if (state.mode === "datasets") return info.datasets.length;
-    if (state.mode === "single") return info.domains.indexOf(state.singleDomain) !== -1 ? 1 : 0;
-    return info.domains.length;
-  }
-  // log-scaled blue ramp for GBIF density
-  function densityColor(v) {
-    if (!v) return "#2a3441";
-    var t = Math.log10(v) / Math.log10(META.gbifMax);   // 0..1
-    t = Math.max(0, Math.min(1, t));
-    var r = Math.round(247 - 210 * t), g = Math.round(252 - 140 * t), b = Math.round(190 + 40 * t);
-    return "rgb(" + r + "," + g + "," + b + ")";
-  }
-  // log-scaled blue ramp for GRDC gauge density (matches the gauge legend gradient)
-  function grdcColor(v) {
-    if (!v) return "#2a3441";
-    var t = Math.log10(v) / Math.log10(META.grdcMax || 1);
-    return lerpColor(t, [8, 32, 58], [215, 240, 255]);
-  }
-  function fillColor(iso) {
-    if (focusCutoff > 0 && isMagnitudeMode() && (countryValue(iso) || 0) < focusCutoff) return NONE;
-    if (state.mode === "density") {
-      var c = GBIF[iso] || 0;
-      return densityColor(c);
-    }
-    if (state.mode === "grdc") return grdcColor(GRDC[iso] || 0);
-    var v = countryValue(iso);
-    if (state.mode === "single") return v ? DOMAIN_COLOR[state.singleDomain] : NONE;
-    if (state.mode === "datasets") return datasetColor(v);   // continuous
-    if (state.mode === "surveys")                            // continuous teal, by survey count
-      return v ? lerpColor(v / (surveyMax || 1), [199, 233, 222], [0, 95, 78]) : NONE;
-    if (state.mode === "recency") {                          // how recent is the latest survey
-      if (!v) return NONE;
-      var age = state.yearTo - v;
-      return age <= 5 ? "#1a9850" : age <= 15 ? "#fee08b" : "#d73027";
-    }
-    return DOMAIN_COUNT[Math.min(v, 4)];                      // categorical 0..4
   }
 
-  // ---- map ----
+  function displaySeries() {
+    if (!state.groupedDonuts) {
+      return datasetOrder.map(function (key) {
+        return {
+          id: key, label: DATASETS[key].name, color: DATASETS[key].color,
+          keys: [key], selected: state.selected[key]
+        };
+      });
+    }
+    return categoryOrder().map(function (domain) {
+      var keys = datasetOrder.filter(function (key) { return DATASETS[key].domain === domain; });
+      return {
+        id: "domain:" + domain, label: domain, color: DATASETS[keys[0]].color,
+        keys: keys, selected: keys.some(function (key) { return state.selected[key]; })
+      };
+    });
+  }
+
+  function countryInScope(iso) {
+    return Object.prototype.hasOwnProperty.call(scopeRecords, iso);
+  }
+
+  function countInWindow(records, iso) {
+    var yearly = records[iso] || {};
+    return Object.keys(yearly).reduce(function (total, year) {
+      var value = Number(year);
+      return total + (value >= state.yearFrom && value <= state.yearTo ? yearly[year] : 0);
+    }, 0);
+  }
+
+  function datasetCount(key, iso) {
+    if (!countryInScope(iso)) return 0;
+    return countInWindow(DATASETS[key].records, iso);
+  }
+
+  function countryCount(iso) {
+    if (!countryInScope(iso)) return 0;
+    return selectedKeys().reduce(function (total, key) {
+      return total + datasetCount(key, iso);
+    }, 0);
+  }
+
+  function seriesCount(series, iso) {
+    return series.keys.reduce(function (total, key) {
+      return total + (state.selected[key] ? datasetCount(key, iso) : 0);
+    }, 0);
+  }
+
+  function seriesYearCount(series, iso, year) {
+    return series.keys.reduce(function (total, key) {
+      if (!state.selected[key]) return total;
+      return total + ((DATASETS[key].records[iso] || {})[String(year)] || 0);
+    }, 0);
+  }
+
+  function formatNumber(value) {
+    return Number(value || 0).toLocaleString();
+  }
+
+  function escapeHTML(value) {
+    return String(value).replace(/[&<>"']/g, function (character) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[character];
+    });
+  }
+
+  var seriesMaxima = {}, datasetYearRanges = {}, seriesYearRanges = {};
+
+  function polar(radius, angle) {
+    var radians = (angle - 90) * Math.PI / 180;
+    return [30 + radius * Math.cos(radians), 30 + radius * Math.sin(radians)];
+  }
+
+  function ringPath(start, end) {
+    var outerStart = polar(27, start), outerEnd = polar(27, end);
+    var innerEnd = polar(14, end), innerStart = polar(14, start);
+    var largeArc = end - start > 180 ? 1 : 0;
+    return "M" + outerStart.join(" ") + " A27 27 0 " + largeArc + " 1 " + outerEnd.join(" ") +
+      " L" + innerEnd.join(" ") + " A14 14 0 " + largeArc + " 0 " + innerStart.join(" ") + " Z";
+  }
+
+  function assessmentColor(value, maximum) {
+    if (!value || !maximum) return "#4b5663";
+    var score = Math.log1p(value) / Math.log1p(maximum);
+    var start, end, amount;
+    if (score <= 0.5) {
+      start = [215, 48, 39]; end = [254, 224, 139]; amount = score * 2;
+    } else {
+      start = [254, 224, 139]; end = [26, 152, 80]; amount = (score - 0.5) * 2;
+    }
+    return "rgb(" + start.map(function (channel, index) {
+      return Math.round(channel + (end[index] - channel) * amount);
+    }).join(",") + ")";
+  }
+
+  function minMaxScore(value, range) {
+    if (!value || !range || !range.max) return 0;
+    if (range.max === range.min) return 1;
+    return Math.max(0, Math.min(1, (value - range.min) / (range.max - range.min)));
+  }
+
+  function scoreColor(score) {
+    var start, end, amount;
+    if (score <= 0.5) {
+      start = [215, 48, 39]; end = [254, 224, 139]; amount = score * 2;
+    } else {
+      start = [254, 224, 139]; end = [26, 152, 80]; amount = (score - 0.5) * 2;
+    }
+    return "rgb(" + start.map(function (channel, index) {
+      return Math.round(channel + (end[index] - channel) * amount);
+    }).join(",") + ")";
+  }
+
+  function positiveRange(values) {
+    var positive = values.filter(function (value) { return value > 0; });
+    return {
+      min: positive.length ? Math.min.apply(null, positive) : 0,
+      max: positive.length ? Math.max.apply(null, positive) : 0
+    };
+  }
+
+  function identityColors(series) {
+    return series.keys.map(function (key) { return DATASETS[key].color; });
+  }
+
+  function identityGradient(series) {
+    var colors = identityColors(series);
+    if (colors.length === 1) return colors[0];
+    var stops = [];
+    colors.forEach(function (color, index) {
+      stops.push(color + " " + (100 * index / colors.length) + "%");
+      stops.push(color + " " + (100 * (index + 1) / colors.length) + "%");
+    });
+    return "linear-gradient(90deg," + stops.join(",") + ")";
+  }
+
+  function sectorAngles(series, index) {
+    var size = 360 / series.length;
+    var currentDomain = DATASETS[series[index].keys[0]].domain;
+    var previousDomain = DATASETS[series[(index + series.length - 1) % series.length].keys[0]].domain;
+    var nextDomain = DATASETS[series[(index + 1) % series.length].keys[0]].domain;
+    var showCategoryGaps = series.length > categoryOrder().length;
+    return {
+      start: index * size + (showCategoryGaps && currentDomain !== previousDomain ? 8 : 1),
+      end: (index + 1) * size - (showCategoryGaps && currentDomain !== nextDomain ? 8 : 1)
+    };
+  }
+
+  function donutLegendHTML(series) {
+    var legendWidth = 400, donutLeft = 170;
+    var defs = '<marker id="legendArrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L8 4 L0 8 Z"></path></marker>';
+    var sectors = "";
+    series.forEach(function (item, index) {
+      var colors = identityColors(item);
+      var fill = colors[0];
+      if (colors.length > 1) {
+        var gradientId = "legendSeries" + index;
+        var stops = colors.map(function (color, colorIndex) {
+          var start = 100 * colorIndex / colors.length;
+          var end = 100 * (colorIndex + 1) / colors.length;
+          return '<stop offset="' + start + '%" stop-color="' + color + '"></stop>' +
+            '<stop offset="' + end + '%" stop-color="' + color + '"></stop>';
+        }).join("");
+        defs += '<linearGradient id="' + gradientId + '" x1="0" x2="1">' + stops + '</linearGradient>';
+        fill = "url(#" + gradientId + ")";
+      }
+      var angles = sectorAngles(series, index);
+      sectors += '<path d="' + ringPath(angles.start, angles.end) +
+        '" fill="' + fill + '" class="legend-identity-sector"></path>';
+    });
+
+    var annotations, legendHeight = 132, donutTop = 35;
+    if (series.length === 2) {
+      annotations = '<text x="240" y="68">' + escapeHTML(series[0].label) + '</text>' +
+        '<path class="legend-arrow" d="M235 64 L225 64"></path>' +
+        '<text x="160" y="68" text-anchor="end">' + escapeHTML(series[1].label) + '</text>' +
+        '<path class="legend-arrow" d="M165 64 L175 64"></path>';
+    } else {
+      var sides = { left: [], right: [] };
+      series.forEach(function (item, index) {
+        var angles = sectorAngles(series, index);
+        var midpoint = (angles.start + angles.end) / 2;
+        var radians = (midpoint - 90) * Math.PI / 180;
+        sides[Math.cos(radians) >= 0 ? "right" : "left"].push({
+          item: item, midpoint: midpoint
+        });
+      });
+      legendHeight = Math.max(132, Math.max(sides.left.length, sides.right.length) * 23 + 24);
+      donutTop = legendHeight / 2 - 30;
+      annotations = ["right", "left"].map(function (side) {
+        var entries = sides[side].sort(function (first, second) {
+          return polar(29, first.midpoint)[1] - polar(29, second.midpoint)[1];
+        });
+        return entries.map(function (entry, index) {
+          var y = entries.length === 1 ? legendHeight / 2 :
+            16 + index * (legendHeight - 32) / (entries.length - 1);
+          var target = polar(29, entry.midpoint);
+          var targetX = donutLeft + target[0], targetY = donutTop + target[1];
+          var right = side === "right";
+          var textX = right ? 240 : 160, lineX = right ? 235 : 165;
+          var elbowX = right ? 226 : 174;
+          return '<text x="' + textX + '" y="' + (y + 4) + '" text-anchor="' +
+            (right ? "start" : "end") + '">' + escapeHTML(entry.item.label) + '</text>' +
+            '<path class="legend-arrow" d="M' + lineX + ' ' + y + ' L' + elbowX + ' ' + y +
+            ' L' + targetX + ' ' + targetY + '"></path>';
+        }).join("");
+      }).join("");
+    }
+    return '<div class="donut-legend"><svg viewBox="0 0 ' + legendWidth + ' ' + legendHeight + '" role="img" aria-label="Radial coverage sector positions">' +
+      '<defs>' + defs + '</defs><g transform="translate(' + donutLeft + ' ' + donutTop + ')">' + sectors +
+      '<circle cx="30" cy="30" r="13" class="legend-centre"></circle></g>' + annotations + '</svg></div>';
+  }
+
   var map = L.map("map", {
-    worldCopyJump: false, minZoom: 2, maxZoom: 10,
-    attributionControl: false, zoomControl: true, preferCanvas: false
-  }).setView([25, 10], 2);
-  map.setMaxBounds([[-85, -200], [88, 200]]);
+    worldCopyJump: true, minZoom: 2, maxZoom: 10,
+    attributionControl: false, zoomControl: true
+  }).setView([25, 15], 4);
 
-  // ---- live GBIF occurrence-density heatmap (fine-grain biodiversity sampling) ----
-  // Tiles fetched from the GBIF map API; gives within-country patchiness that the
-  // country choropleth can't show. Needs internet (the rest of the app is offline).
-  map.createPane("gbifPane");
-  map.getPane("gbifPane").style.zIndex = 350;          // above basemap tiles, below country vectors
-  map.getPane("gbifPane").style.pointerEvents = "none";
-  var cartoBase = L.tileLayer(
-    "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
-    { subdomains: "abcd", maxZoom: 19, detectRetina: true });
-  // Point heat-glow style: detailed "painted" look (rivers, sampling tracks), empty areas
-  // transparent so the dark basemap shows through. Heavier tiles, but GBIF CDN-caches them;
-  // updateWhenIdle defers requests until panning stops, removing most of the perceived lag.
-  var gbifHeat = L.tileLayer(
-    "https://api.gbif.org/v2/map/occurrence/density/{z}/{x}/{y}@1x.png" +
-    "?srs=EPSG:3857&style=orangeHeat.point",
-    { tileSize: 512, zoomOffset: -1, opacity: 0.78, pane: "gbifPane", maxNativeZoom: 14,
-      updateWhenIdle: true, updateWhenZooming: false, keepBuffer: 2 });
-  // GRDC river gauges — no tile service exists, so we render the real station points
-  // (the "GBIF of water"): a blue heat glow of ~10,700 gauges, dense where rivers are
-  // monitored, dark over ungauged basins.
-  // focus filter for the gauge heat: keep only points in the densest X% of 1° cells
-  function grdcHeatData() {
-    if (state.focusPct >= 100) return GRDC_PTS;
-    var bins = {};
-    GRDC_PTS.forEach(function (p) { var k = Math.floor(p[0]) + "_" + Math.floor(p[1]); bins[k] = (bins[k] || 0) + 1; });
-    var counts = Object.keys(bins).map(function (k) { return bins[k]; }).sort(function (a, b) { return b - a; });
-    var k = Math.max(1, Math.ceil(counts.length * state.focusPct / 100));
-    var cut = counts[Math.min(k - 1, counts.length - 1)];
-    return GRDC_PTS.filter(function (p) { return bins[Math.floor(p[0]) + "_" + Math.floor(p[1])] >= cut; });
-  }
-  var grdcHeat = L.heatLayer(grdcHeatData(), {
-    radius: 10, blur: 13, minOpacity: 0.3, maxZoom: 8,
-    gradient: { 0.2: "#1c6fae", 0.45: "#54c0e8", 0.75: "#bfe9ff", 1: "#ffffff" } });
-  function anyHeat() { return state.gbifHeat || state.grdcHeat; }
-  function updateHeatBase() {
-    if (anyHeat()) { if (!map.hasLayer(cartoBase)) cartoBase.addTo(map); }
-    else if (map.hasLayer(cartoBase)) map.removeLayer(cartoBase);
-    applyStyles();
-  }
+  var sidebarToggle = document.getElementById("sidebarToggle");
+  sidebarToggle.onclick = function () {
+    var collapsed = document.body.classList.toggle("sidebar-collapsed");
+    sidebarToggle.setAttribute("aria-expanded", !collapsed);
+    sidebarToggle.setAttribute("aria-label", collapsed ? "Expand sidebar" : "Collapse sidebar");
+    sidebarToggle.title = collapsed ? "Expand sidebar" : "Collapse sidebar";
+    sidebarToggle.querySelector(".sidebar-toggle-icon").textContent = collapsed ? "›" : "‹";
+    window.setTimeout(function () { map.invalidateSize(); }, 240);
+  };
 
-  (function graticule() {
+  (function addGraticule() {
     var lines = [];
-    for (var lo = -180; lo <= 180; lo += 30) lines.push([[-85, lo], [85, lo]]);
-    for (var la = -60; la <= 80; la += 30) lines.push([[la, -180], [la, 180]]);
+    for (var lon = -180; lon <= 180; lon += 30) lines.push([[-85, lon], [85, lon]]);
+    for (var lat = -60; lat <= 80; lat += 30) lines.push([[lat, -180], [lat, 180]]);
     L.polyline(lines, { color: "#9fb0c0", weight: 0.4, opacity: 0.18, interactive: false }).addTo(map);
   })();
 
-  var idToLayer = {};
-  var layer = L.geoJSON(WORLD_GEOJSON, {
-    style: styleFn,
-    onEachFeature: function (feat, lyr) {
-      idToLayer[feat.id] = lyr;
-      lyr.on({
-        mouseover: function (e) { if (state.highlight) return; e.target.setStyle({ weight: 1.8, color: "#fff" }); e.target.bringToFront(); },
-        mouseout: function () { applyStyles(); },
-        click: function () { openDetail(feat.id, feat.properties.name); }
+  var countryEntries = [];
+  var countries = L.geoJSON(WORLD_GEOJSON, {
+    style: countryStyle,
+    onEachFeature: function (feature, layer) {
+      countryEntries.push({ feature: feature, layer: layer });
+      layer.bindTooltip(function () { return tooltipHTML(feature); }, {
+        className: "ctip leaflet-tooltip-own", sticky: true, direction: "top", opacity: 1
       });
-      lyr.bindTooltip(function () { return countryStatsTooltip(feat.id, feat.properties.name); },
-        { className: "ctip leaflet-tooltip-own", sticky: true, direction: "top", opacity: 1 });
+      layer.on({
+        mouseover: function (event) {
+          event.target.setStyle({ weight: 1.7, color: "#fff" });
+          event.target.bringToFront();
+        },
+        mouseout: function () { countries.setStyle(countryStyle); },
+        click: function () { openDetail(feature); }
+      });
     }
   }).addTo(map);
 
-  var assessmentMarkers = {};
-  function yearlyDomainValues(iso, year) {
-    var values = { ecology: 0, hydrology: 0, agriculture: 0, health: 0 };
-    DATASETS.forEach(function (dataset) {
-      if (!datasetActiveAtYear(dataset, year) || !coversCountry(dataset, iso)) return;
-      dataset.domains.forEach(function (domain) {
-        if (domain === "Ecology") values.ecology++;
-        else if (domain === "Hydro") values.hydrology++;
-        else if (domain === "Agriculture") values.agriculture++;
-      });
-    });
-    values.health = (SURVEYS[iso] || []).filter(function (survey) { return survey.year === year; }).length;
-    return values;
-  }
-  function assessmentMarkerSize() {
-    return Math.max(40, Math.min(190, 40 + (map.getZoom() - 2) * 20));
-  }
-  function renderAssessmentMarkers() {
-    var markerSize = assessmentMarkerSize();
-    var assessmentOptions = {
-      features: visibleFeatures(), gbif: GBIF, grdc: GRDC,
-      surveysFor: surveysFor
+  function countryStyle(feature) {
+    if (!countryInScope(feature.id)) {
+      return { fillColor: "#0d141d", fillOpacity: 0.58, color: "#1b2734", weight: 0.45 };
+    }
+    var count = countryCount(feature.id);
+    return {
+      fillColor: count ? "#263443" : "#1b2530", fillOpacity: count ? 0.42 : 0.34,
+      color: count ? "#708296" : "#344250", weight: 0.65
     };
-    if (state.yearlyHistograms) {
-      assessmentOptions.years = [];
-      for (var year = state.yearFrom; year <= state.yearTo; year++) assessmentOptions.years.push(year);
-      assessmentOptions.yearlyValues = yearlyDomainValues;
+  }
+
+  function tooltipHTML(feature) {
+    if (!countryInScope(feature.id)) {
+      return "<b>" + escapeHTML(feature.properties.name) + "</b><br>Outside DHS participant-data scope";
     }
-    var assessment = window.DataDeserts.recordAssessment.create(assessmentOptions);
-    visibleFeatures().forEach(function (feature) {
-      var countryLayer = idToLayer[feature.id];
-      if (!countryLayer) return;
-      var icon = L.divIcon({
-        className: "assessment-div-icon",
-        html: assessment.markerHTML(feature.properties.name, feature.id, markerSize),
-        iconSize: [markerSize, markerSize], iconAnchor: [markerSize / 2, markerSize / 2]
+    var rows = selectedKeys().map(function (key) {
+      return escapeHTML(DATASETS[key].name) + ": " + formatNumber(datasetCount(key, feature.id)) +
+        " " + escapeHTML(DATASETS[key].unit);
+    });
+    return "<b>" + escapeHTML(feature.properties.name) + "</b><br>" +
+      "Total: " + formatNumber(countryCount(feature.id)) + " records" +
+      (rows.length ? "<br>" + rows.join("<br>") : "<br>No datasets selected");
+  }
+
+  function recomputeScale() {
+    seriesMaxima = {}; datasetYearRanges = {}; seriesYearRanges = {};
+    var series = displaySeries();
+    var datasetValues = {}, seriesValues = {}, normalizationCountries = {};
+    datasetOrder.forEach(function (key) {
+      datasetValues[key] = [];
+      Object.keys(DATASETS[key].records).forEach(function (iso) {
+        normalizationCountries[iso] = true;
+        Object.keys(DATASETS[key].records[iso]).forEach(function (year) {
+          datasetValues[key].push(DATASETS[key].records[iso][year]);
+        });
       });
-      var marker = assessmentMarkers[feature.id];
-      if (!marker) {
-        marker = L.marker(countryLayer.getBounds().getCenter(), { icon: icon, riseOnHover: true }).addTo(map);
-        marker.on("click", function () { openDetail(feature.id, feature.properties.name); });
-        marker.bindTooltip("", { className: "ctip leaflet-tooltip-own", direction: "top", opacity: 1 });
-        assessmentMarkers[feature.id] = marker;
-      } else marker.setIcon(icon);
-      marker.setTooltipContent(assessment.tooltipHTML(feature.properties.name, feature.id));
+    });
+    series.forEach(function (item) { seriesMaxima[item.id] = 0; seriesValues[item.id] = []; });
+    WORLD_GEOJSON.features.forEach(function (feature) {
+      if (!countryInScope(feature.id)) return;
+      series.forEach(function (item) {
+        seriesMaxima[item.id] = Math.max(seriesMaxima[item.id], seriesCount(item, feature.id));
+      });
+    });
+    Object.keys(normalizationCountries).forEach(function (iso) {
+      series.forEach(function (item) {
+        for (var year = META.yearMin; year <= META.yearMax; year++) {
+          seriesValues[item.id].push(item.keys.reduce(function (total, key) {
+            if (!state.selected[key]) return total;
+            return total + ((DATASETS[key].records[iso] || {})[String(year)] || 0);
+          }, 0));
+        }
+      });
+    });
+    datasetOrder.forEach(function (key) {
+      datasetYearRanges[key] = positiveRange(datasetValues[key]);
+    });
+    series.forEach(function (item) {
+      seriesYearRanges[item.id] = positiveRange(seriesValues[item.id]);
     });
   }
-  map.on("zoomend", renderAssessmentMarkers);
 
-  function styleFn(feat) {
-    if (anyHeat() && !state.highlight) {
-      // transparent fills so the heat layer shows through; keep faint country outlines as a guide
-      return { fillColor: "#000", fillOpacity: 0, color: "#7f93a8", weight: 0.5, opacity: 0.55 };
-    }
-    if (state.highlight) {
-      var ds = DATASETS.find(function (d) { return d.name === state.highlight; });
-      // for station/record datasets, the real footprint is where data actually exists
-      var on;
-      if (ds && ds.densityKey) on = ((ds.densityKey === "grdc" ? GRDC : GBIF)[feat.id] || 0) > 0;
-      else on = ds && coversCountry(ds, feat.id);
-      return { fillColor: on ? (DOMAIN_COLOR[ds.domains[0]] || "#5ec5ff") : "#2a3441",
-               fillOpacity: on ? 0.9 : 0.18, color: on ? "#ffffff" : "#1b2734", weight: on ? 1.2 : 0.5 };
-    }
-    if (!countryVisible(feat.id))                             // outside DHS scope: greyed out
-      return { fillColor: "#0d141d", fillOpacity: 0.55, color: "#1b2734", weight: 0.4 };
-    return { fillColor: "#263443", fillOpacity: 0.38, color: "#607287", weight: 0.7 };
+  function seriesAcronym(series) {
+    var acronyms = {
+      biotime: "BIO", living_planet: "LPI", predicts: "PRE", gbif: "GBIF",
+      lsms_isa: "ISA", dhs: "DHS", mics: "MICS", lsms: "LSMS",
+      "domain:Ecology": "ECO", "domain:Agriculture": "AGR",
+      "domain:Public Health": "PH"
+    };
+    return acronyms[series.id] || series.label.slice(0, 4).toUpperCase();
   }
-  function applyStyles() { layer.setStyle(styleFn); }
 
-  function recomputeScales() {                            // per-render max scales + focus cutoff
-    dsMax = 1; surveyMax = 1;
-    visibleFeatures().forEach(function (f) {
-      var n = countryInfo(f.id).datasets.length;
-      if (n > dsMax) dsMax = n;
-      var s = surveysFor(f.id).length;
-      if (s > surveyMax) surveyMax = s;
-    });
-    focusCutoff = 0;
-    if (state.focusPct < 100 && isMagnitudeMode()) {
-      var vals = visibleFeatures().map(function (f) { return countryValue(f.id); })
-        .filter(function (v) { return v > 0; }).sort(function (a, b) { return b - a; });
-      if (vals.length) {
-        var k = Math.max(1, Math.ceil(vals.length * state.focusPct / 100));
-        focusCutoff = vals[Math.min(k - 1, vals.length - 1)];   // show values >= this
+  function donutHTML(feature, size) {
+    var series = displaySeries();
+    var paths = [], labels = [];
+    series.forEach(function (item, index) {
+      var angles = sectorAngles(series, index);
+      var sectorStart = angles.start;
+      var sectorEnd = angles.end;
+      if (size >= 110) {
+        var labelPoint = polar(21, (sectorStart + sectorEnd) / 2);
+        labels.push('<text x="' + labelPoint[0] + '" y="' + labelPoint[1] +
+          '" fill="#fff" stroke="#101923" stroke-width="1.35" paint-order="stroke"' +
+          ' font-size="3.4" font-weight="800" text-anchor="middle" dominant-baseline="central"' +
+          ' opacity="' + (item.selected ? 1 : 0.42) + '">' + escapeHTML(seriesAcronym(item)) + '</text>');
       }
+      if (!item.selected) {
+        paths.push('<path d="' + ringPath(sectorStart, sectorEnd) + '" class="sector empty-sector"></path>');
+        return;
+      }
+      if (!state.yearlyHistograms) {
+        var value = seriesCount(item, feature.id);
+        paths.push('<path d="' + ringPath(sectorStart, sectorEnd) + '" fill="' +
+          assessmentColor(value, seriesMaxima[item.id]) + '" class="sector' +
+          (value ? "" : " empty-sector") + '"></path>');
+        return;
+      }
+      paths.push('<path d="' + ringPath(sectorStart, sectorEnd) + '" class="sector-outline"></path>');
+      var yearCount = state.yearTo - state.yearFrom + 1;
+      var bucketWidth = (sectorEnd - sectorStart) / yearCount;
+      for (var year = state.yearFrom; year <= state.yearTo; year++) {
+        var count = seriesYearCount(item, feature.id, year);
+        if (!count) continue;
+        var start = sectorStart + (year - state.yearFrom) * bucketWidth;
+        var end = Math.min(sectorEnd, start + Math.max(0.08, bucketWidth - 0.08));
+        paths.push('<path d="' + ringPath(start, end) + '" fill="' +
+          scoreColor(minMaxScore(count, seriesYearRanges[item.id])) + '" class="bucket"></path>');
+      }
+    });
+    var fontSize = Math.max(4, Math.min(9, Math.round(size * 0.105)));
+    return '<div class="record-donut" style="--size:' + size + 'px;--font:' + fontSize + 'px">' +
+      '<svg viewBox="0 0 60 60" aria-hidden="true"><circle cx="30" cy="30" r="28" class="backing"></circle>' +
+      paths.join("") + labels.join("") + '<circle cx="30" cy="30" r="13" class="centre"></circle></svg><span>' +
+      escapeHTML(feature.properties.name) + '</span></div>';
+  }
+
+  var recordMarkers = {};
+  function markerSize() {
+    var zoom = map.getZoom();
+    var size = 30 + (zoom - 2) * 16;
+    if (zoom > 4) size += (zoom - 4) * 12;
+    return Math.max(30, Math.min(180, size));
+  }
+
+  function renderDonuts() {
+    var size = markerSize();
+    countryEntries.forEach(function (entry, markerIndex) {
+      var feature = entry.feature, countryLayer = entry.layer;
+      if (!countryInScope(feature.id)) return;
+      var icon = L.divIcon({
+        className: "record-div-icon", html: donutHTML(feature, size),
+        iconSize: [size, size], iconAnchor: [size / 2, size / 2]
+      });
+      var marker = recordMarkers[markerIndex];
+      if (!marker) {
+        var position = MARKER_POSITIONS[feature.id] || countryLayer.getBounds().getCenter();
+        marker = L.marker(position, { icon: icon, riseOnHover: true }).addTo(map);
+        marker.on("click", function () { openDetail(feature); });
+        marker.bindTooltip(function () { return tooltipHTML(feature); }, {
+          className: "ctip leaflet-tooltip-own", direction: "top", opacity: 1
+        });
+        recordMarkers[markerIndex] = marker;
+      } else marker.setIcon(icon);
+    });
+  }
+  map.on("zoomend", renderDonuts);
+
+  function selectedTotal() {
+    return WORLD_GEOJSON.features.reduce(function (total, feature) {
+      return total + countryCount(feature.id);
+    }, 0);
+  }
+
+  function yearlyTotals() {
+    var totals = {};
+    for (var year = META.yearMin; year <= META.yearMax; year++) totals[year] = 0;
+    selectedKeys().forEach(function (key) {
+      Object.keys(DATASETS[key].records).forEach(function (iso) {
+        if (!countryInScope(iso)) return;
+        Object.keys(DATASETS[key].records[iso]).forEach(function (year) {
+          if (totals[year] !== undefined) totals[year] += DATASETS[key].records[iso][year];
+        });
+      });
+    });
+    return totals;
+  }
+
+  function renderHistogram() {
+    var totals = yearlyTotals();
+    var range = positiveRange(Object.keys(totals).map(function (year) { return totals[year]; }));
+    var html = "";
+    Object.keys(totals).forEach(function (year) {
+      var active = Number(year) >= state.yearFrom && Number(year) <= state.yearTo;
+      var height = totals[year] ? Math.max(2, Math.round(100 * minMaxScore(totals[year], range))) : 2;
+      html += '<i class="' + (active ? "active" : "") + '" style="height:' + height + '%" title="' +
+        year + ": " + formatNumber(totals[year]) + ' records"></i>';
+    });
+    document.getElementById("yearHist").innerHTML = html;
+  }
+
+  function renderSummary() {
+    var keys = selectedKeys();
+    var legendSeries = displaySeries();
+    document.getElementById("datasetLegend").innerHTML =
+      (state.groupedDonuts ? '<div class="legend-group-title">Grouped by category</div>' :
+        '<div class="legend-group-title">Individual datasets</div>') + donutLegendHTML(legendSeries) +
+      '<div class="legend-group-title count-scale-title">Count scale within each sector</div>' +
+      '<div class="assessment-gradient"></div><div class="assessment-gradient-labels">' +
+      '<span>Low</span><span>Average</span><span>High</span></div>' + legendSeries.map(function (series) {
+      var identity = state.groupedDonuts
+        ? '<span class="legend-category-swatches">' + series.keys.map(function (key) {
+          return '<i style="background:' + DATASETS[key].color + ';opacity:' + (state.selected[key] ? 1 : 0.25) + '"></i>';
+        }).join("") + '</span>'
+        : '<i class="identity-key" style="background:' + identityGradient(series) + '"></i>';
+      return '<div class="dataset-legend-row" style="opacity:' + (series.selected ? 1 : 0.4) +
+        '">' + identity + '<span class="legend-series-name' + (state.groupedDonuts ? ' category-name' : '') + '">' +
+        escapeHTML(series.label) +
+        '</span><small class="legend-maximum">' +
+        (series.selected ? formatNumber(seriesMaxima[series.id]) + " max" : "off") + '</small></div>';
+    }).join("");
+    document.getElementById("recordTotal").textContent = formatNumber(selectedTotal()) + " records";
+    document.getElementById("legendMax").textContent = "Grey = no records";
+    document.getElementById("mapCaption").textContent =
+      (keys.length ? keys.length + " selected dataset" + (keys.length === 1 ? "" : "s") : "No datasets") +
+      " · " + state.yearFrom + "–" + state.yearTo + " · " +
+      (state.yearlyHistograms ? "yearly " : "") +
+      (state.groupedDonuts ? "category radial sectors" : "dataset radial sectors");
+  }
+
+  function syncHash() {
+    var params = new URLSearchParams();
+    params.set("v", "4");
+    params.set("datasets", selectedKeys().join(","));
+    params.set("from", state.yearFrom);
+    params.set("to", state.yearTo);
+    params.set("hist", state.yearlyHistograms ? "1" : "0");
+    params.set("group", state.groupedDonuts ? "categories" : "datasets");
+    try { history.replaceState(null, "", "#" + params.toString()); } catch (error) { /* file:// */ }
+  }
+
+  function loadHash() {
+    if (!location.hash) return;
+    var params = new URLSearchParams(location.hash.slice(1));
+    if (params.has("datasets")) {
+      var requested = params.get("datasets").split(",");
+      // Older links predate one or more survey datasets. Preserve their explicit
+      // selections while leaving newly introduced datasets selected by default.
+      var linkVersion = params.get("v");
+      datasetOrder.forEach(function (key) {
+        var existedWhenShared = linkVersion === "4" ||
+          ((linkVersion === "2" || linkVersion === "3") && key !== "mics") ||
+          (!linkVersion && key !== "dhs" && key !== "mics");
+        if (existedWhenShared)
+          state.selected[key] = requested.indexOf(key) !== -1;
+      });
     }
+    var from = Number(params.get("from")), to = Number(params.get("to"));
+    if (from >= META.yearMin && from <= META.yearMax) state.yearFrom = from;
+    if (to >= META.yearMin && to <= META.yearMax) state.yearTo = to;
+    if (state.yearFrom > state.yearTo) state.yearFrom = state.yearTo;
+    if (params.has("hist")) state.yearlyHistograms = params.get("hist") === "1";
+    if (params.has("group")) state.groupedDonuts = params.get("group") === "categories";
   }
 
   function redraw() {
-    recomputeScales();
-    applyStyles(); renderAssessmentMarkers(); updateLegend(); updateCaption();
-    if (insightsOpen) renderInsights();
+    recomputeScale();
+    countries.setStyle(countryStyle);
+    renderDonuts();
+    renderHistogram();
+    renderSummary();
+    updateYearControls();
     syncHash();
+    if (document.getElementById("detail").style.display === "block") {
+      var iso = document.getElementById("detail").dataset.iso;
+      var feature = WORLD_GEOJSON.features.find(function (item) { return item.id === iso; });
+      if (feature) openDetail(feature);
+    }
   }
 
-  // ---- persistent "what am I looking at" caption ----
-  function updateCaption() {
-    var base = {
-      assessment: "Overall record assessment — each segment is normalized within its own domain",
-      domains: "Colour: how many of the 4 data types each country has",
-      datasets: "Colour: number of datasets per country",
-      single: "Colour: where " + state.singleDomain + " data exists",
-      surveys: "Colour: number of public-health surveys",
-      recency: "Colour: how recent each country's latest health survey is",
-      density: "Colour: biodiversity record density (GBIF)",
-      grdc: "Colour: river-gauge density (GRDC)"
-    }[state.mode] || "";
-    var win = state.yearFrom === state.yearTo ? state.yearFrom : state.yearFrom + "–" + state.yearTo;
-    var cap = document.getElementById("mapCaption");
-    cap.textContent = base + "  ·  " + win + "  ·  DHS countries only" +
-      (state.yearlyHistograms ? "  ·  one bucket per year; gaps are missing years" : "");
-    // update the always-on legend title too
-    var lt = document.getElementById("legendTitle");
-    if (lt) lt.textContent = "— " + (modeLabel() || "");
-    // expand whichever acronym is on screen, as a hover tooltip
-    var gloss = {
-      density: "GBIF = Global Biodiversity Information Facility, a worldwide species-observation database.",
-      grdc: "GRDC = Global Runoff Data Centre, a catalogue of ~10,700 river-flow gauging stations.",
-      surveys: "Open household-survey programmes: DHS, MICS and LSMS-ISA — mostly run in low- and middle-income countries.",
-      recency: "Open household-survey programmes: DHS, MICS and LSMS-ISA — mostly run in low- and middle-income countries."
-    }[state.mode];
-    if (gloss) cap.title = gloss; else cap.removeAttribute("title");
-  }
+  function renderFilters() {
+    var container = document.getElementById("datasetFilters");
+    container.innerHTML = "";
+    categoryOrder().forEach(function (domain) {
+      var keys = datasetOrder.filter(function (key) { return DATASETS[key].domain === domain; });
+      var selectedCount = keys.filter(function (key) { return state.selected[key]; }).length;
+      var categoryTotal = keys.reduce(function (total, key) {
+        return total + DATASETS[key].scopeSummary.records;
+      }, 0);
+      var group = document.createElement("div");
+      group.className = "category-group";
+      var categoryLabel = document.createElement("label");
+      categoryLabel.className = "category-filter";
+      categoryLabel.innerHTML = '<input type="checkbox"><b>' + escapeHTML(domain) + '</b><span class="count">' +
+        selectedCount + '/' + keys.length + ' · ' + formatNumber(categoryTotal) + '</span>';
+      var categoryCheckbox = categoryLabel.querySelector("input");
+      categoryCheckbox.checked = selectedCount === keys.length;
+      categoryCheckbox.indeterminate = selectedCount > 0 && selectedCount < keys.length;
+      categoryCheckbox.onchange = function () {
+        keys.forEach(function (key) { state.selected[key] = categoryCheckbox.checked; });
+        redraw();
+      };
+      group.appendChild(categoryLabel);
 
-  // ---- detail panel ----
-  var detail = document.getElementById("detail");
-  document.getElementById("detailClose").onclick = function () { detail.style.display = "none"; };
-
-  // chronological timeline of the actual public-health surveys for a country
-  function surveyTimelineHTML(iso) {
-    var sv = surveysFor(iso);
-    if (!sv.length) return "";
-    var chips = sv.map(function (s) {
-      var c = PROGRAM_COLOR[s.type] || PROGRAM_COLOR[s.program] || "#8a97a6";
-      return '<span class="svchip" style="border-color:' + c + ';color:' + c + '" title="' +
-        s.program + ' ' + s.label + '">' + s.type + ' ' + s.year + '</span>';
-    }).join("");
-    return '<div class="domblock">' +
-      '<div class="dlabel"><span class="swatch" style="background:' + DOMAIN_COLOR["Public Health"] + '"></span>' +
-        'Public-health surveys <span class="pill">' + sv.length + '</span></div>' +
-      '<div class="sv-span">' + sv[0].year + '–' + sv[sv.length - 1].year + ' &middot; individual surveys collected:</div>' +
-      '<div class="sv-chips">' + chips + '</div></div>';
-  }
-
-  // is a dataset active for a single year Y (same filters as datasetActive, but a point year)?
-  function datasetActiveAtYear(ds, y) {
-    if (!state.includeGlobal && ds.global) return false;
-    if (ds.years && !(ds.years[0] <= y && ds.years[1] >= y)) return false;
-    if (!state.access[accessGroup(ds.access)]) return false;
-    return ds.domains.some(function (d) { return state.domains[d]; });
-  }
-  // Headline score for a country within the chosen window.
-  function countryScoreHTML(iso) {
-    var score = countryInfo(iso).datasets.length;
-    var win = state.yearFrom === state.yearTo ? state.yearFrom : state.yearFrom + "–" + state.yearTo;
-    return '<div class="scorecard"><div class="sc-num">' + score + '</div>' +
-      '<div class="sc-lab"><b>dataset' + (score === 1 ? '' : 's') + '</b> cover this country<br>in <b>' + win + '</b> &middot; ' +
-      countryInfo(iso).domains.length + ' / 4 domains</div></div>';
-  }
-
-  function countryHistoryHTML(iso) {
-    var years = [];
-    for (var year = state.yearFrom; year <= state.yearTo; year++) years.push(year);
-    return window.DataDeserts.recordAssessment.create({
-      features: visibleFeatures(), gbif: GBIF, grdc: GRDC, surveysFor: surveysFor,
-      years: years, yearlyValues: yearlyDomainValues
-    }).historyHTML(iso);
-  }
-
-  function openDetail(iso, name) {
-    var info = countryInfo(iso);
-    document.getElementById("dName").textContent = name;
-    var dens = GBIF[iso] ? ' &middot; ' + GBIF[iso].toLocaleString() + ' GBIF records' : '';
-    document.getElementById("dMeta").innerHTML =
-      info.domains.length + " of 4 domains &middot; " + info.datasets.length + " dataset(s) active" + dens;
-    var body = document.getElementById("dBody");
-    var historyHTML = countryHistoryHTML(iso);
-    var scoreHTML = countryScoreHTML(iso);
-    var svHTML = state.domains["Public Health"] ? surveyTimelineHTML(iso) : "";
-    body.innerHTML = historyHTML + scoreHTML + svHTML;
-    if (!info.datasets.length && !svHTML) {
-      body.innerHTML = historyHTML + scoreHTML + '<div class="empty">No active datasets cover this country in this window — a data desert.</div>';
-    } else {
-      DOMAINS.forEach(function (dom) {
-        if (!state.domains[dom]) return;
-        var list = info.datasets.filter(function (ds) { return ds.domains.indexOf(dom) !== -1; });
-        if (!list.length) return;
-        var block = document.createElement("div");
-        block.className = "domblock";
-        block.innerHTML = '<div class="dlabel"><span class="swatch" style="background:' + DOMAIN_COLOR[dom] + '"></span>' + dom + '</div>';
-        list.forEach(function (ds) {
-          var cov = ds.coverage === "GLOBAL" ? "global" : ds.coverage.length + " countries";
-          var yr = ds.years ? ds.years[0] + "–" + ds.years[1] : "";
-          var d = document.createElement("div");
-          d.className = "ds";
-          d.innerHTML =
-            '<div class="ds-top"><a href="' + ds.url + '" target="_blank" rel="noopener">' + ds.name + '</a>' +
-            '<button class="fp" data-name="' + ds.name + '">footprint</button></div>' +
-            '<div class="tags"><span class="pill">' + cov + '</span> ' + ds.modality + ' &middot; ' + ds.access +
-            (yr ? ' &middot; ' + yr : '') + '</div>';
-          d.querySelector(".fp").onclick = function () { showFootprint(ds.name); };
-          block.appendChild(d);
-        });
-        body.appendChild(block);
+      var datasetsContainer = document.createElement("div");
+      datasetsContainer.className = "category-datasets";
+      keys.forEach(function (key) {
+        var dataset = DATASETS[key];
+        var label = document.createElement("label");
+        label.className = "dataset-filter";
+        label.innerHTML = '<input type="checkbox"><span class="swatch" style="background:' + dataset.color + '"></span>' +
+          '<span><b>' + escapeHTML(dataset.name) + '</b><small>' + escapeHTML(dataset.description) + '</small></span>' +
+          '<span class="count">' + formatNumber(dataset.scopeSummary.records) + '</span>';
+        var checkbox = label.querySelector("input");
+        checkbox.checked = state.selected[key];
+        checkbox.onchange = function () { state.selected[key] = checkbox.checked; redraw(); };
+        datasetsContainer.appendChild(label);
       });
-    }
-    detail.style.display = "block";
-  }
-
-  // ---- footprint ----
-  var fpBanner = document.getElementById("fpBanner");
-  function showFootprint(name) {
-    state.highlight = name;
-    var ds = DATASETS.find(function (d) { return d.name === name; });
-    var n;
-    if (ds.densityKey) {                                  // station/record dataset: show real presence
-      var dm = ds.densityKey === "grdc" ? GRDC : GBIF;
-      var k = WORLD_GEOJSON.features.filter(function (f) { return (dm[f.id] || 0) > 0; }).length;
-      n = "nominally global, but records exist in " + k + " countries";
-    } else {
-      n = ds.coverage === "GLOBAL" ? "every land country (global)" : ds.coverage.length + " countries";
-    }
-    document.getElementById("fpText").innerHTML = "Footprint: <b>" + name + "</b> — " + n;
-    fpBanner.style.display = "flex"; applyStyles();
-  }
-  function clearFootprint() { state.highlight = null; fpBanner.style.display = "none"; applyStyles(); }
-  document.getElementById("fpClear").onclick = clearFootprint;
-
-  // ---- legend ----
-  function updateLegend() {
-    var el = document.getElementById("legend");
-    if (state.mode === "assessment") {
-      el.innerHTML =
-        window.DataDeserts.recordAssessment.legendHTML() +
-        '<div class="legend-bar" style="margin-top:9px;background:linear-gradient(90deg,#d73027,#fee08b,#1a9850)"></div>' +
-        '<div class="legend-ends"><span>lower count</span><span>higher count</span></div>' +
-        '<div class="legend-row" style="margin-top:6px"><span class="box" style="background:#68737f"></span>No data / unavailable</div>' +
-        '<div style="font-size:11px;color:var(--muted);line-height:1.45;margin-top:7px">Red → yellow → green is log-normalized separately for each domain across DHS countries. Position identifies the domain.</div>' +
-        (state.yearlyHistograms ? '<div style="font-size:11px;color:var(--accent);line-height:1.45;margin-top:6px">Yearly view: each sector runs from the earliest selected year to the latest. Blank gaps are missing years.</div>' : '');
-    } else if (state.mode === "density") {
-      el.innerHTML =
-        '<div class="legend-bar" style="background:linear-gradient(90deg,#f7fcbe,#7fd0db,#1f6fbf,#0a2e6e)"></div>' +
-        '<div class="legend-ends"><span>few records</span><span>' + (META.gbifMax / 1e9).toFixed(1) + 'B</span></div>' +
-        '<div class="legend-row" style="margin-top:6px"><span class="box" style="background:#2a3441"></span>no GBIF records</div>' +
-        (META.gbifCleaned ? '<div style="font-size:11px;color:var(--muted);margin-top:6px">Counts are <b>quality-filtered</b>: georeferenced, no geospatial issues, no fossils/living specimens.</div>' : '');
-    } else if (state.mode === "grdc") {
-      el.innerHTML =
-        '<div class="legend-bar" style="background:linear-gradient(90deg,#08203a,#1c6fae,#54c0e8,#d7f0ff)"></div>' +
-        '<div class="legend-ends"><span>few gauges</span><span>' + META.grdcMax + '</span></div>' +
-        '<div class="legend-row" style="margin-top:6px"><span class="box" style="background:#2a3441"></span>no GRDC gauges</div>';
-    } else if (state.mode === "single") {
-      el.innerHTML =
-        '<div class="legend-row"><span class="box" style="background:' + DOMAIN_COLOR[state.singleDomain] + '"></span>' + state.singleDomain + ' present</div>' +
-        '<div class="legend-row"><span class="box" style="background:' + NONE + '"></span>absent</div>';
-    } else if (state.mode === "datasets") {
-      // continuous scale (0 → current max)
-      el.innerHTML =
-        '<div class="legend-bar" style="background:linear-gradient(90deg,#e7dcf3,#5d2a8f)"></div>' +
-        '<div class="legend-ends"><span>1</span><span>' + dsMax + ' datasets</span></div>' +
-        '<div class="legend-row" style="margin-top:6px"><span class="box" style="background:' + NONE + '"></span>no data in active layers</div>';
-    } else if (state.mode === "surveys") {
-      el.innerHTML =
-        '<div class="legend-bar" style="background:linear-gradient(90deg,#c7e9de,#005f4e)"></div>' +
-        '<div class="legend-ends"><span>1</span><span>' + surveyMax + ' surveys</span></div>' +
-        '<div class="legend-row" style="margin-top:6px"><span class="box" style="background:' + NONE + '"></span>no DHS/MICS/LSMS surveys</div>';
-    } else if (state.mode === "recency") {
-      el.innerHTML =
-        '<div class="legend-row"><span class="box" style="background:#1a9850"></span>latest within 5 years</div>' +
-        '<div class="legend-row"><span class="box" style="background:#fee08b"></span>6–15 years ago</div>' +
-        '<div class="legend-row"><span class="box" style="background:#d73027"></span>16+ years ago</div>' +
-        '<div class="legend-row"><span class="box" style="background:' + NONE + '"></span>no surveys</div>';
-    } else {
-      // categorical (only 5 possible values: 0..4 domains)
-      var labels = ["0 — none (desert)", "1 domain", "2 domains", "3 domains", "4 domains"];
-      el.innerHTML = labels.map(function (l, i) {
-        return '<div class="legend-row"><span class="box" style="background:' + DOMAIN_COUNT[i] + '"></span>' + l + '</div>';
-      }).join("");
-    }
-  }
-
-  // ---- "More ▾" dropdown menu (secondary tools) ----
-  (function moreMenu() {
-    var btn = document.getElementById("moreBtn");
-    var wrap = btn.parentNode;                 // .menu
-    btn.onclick = function (e) { e.stopPropagation(); wrap.classList.toggle("open"); };
-    // any tool inside the menu closes it after its own handler runs (click bubbles up)
-    document.getElementById("moreMenu").addEventListener("click", function () { wrap.classList.remove("open"); });
-    // click anywhere else closes it
-    document.addEventListener("click", function (e) { if (!wrap.contains(e.target)) wrap.classList.remove("open"); });
-  })();
-
-  // ---- insights ----
-  var insightsOpen = false;
-  var insightsEl = document.getElementById("insights");
-  var insightsBtn = document.getElementById("insightsBtn");
-  function toggleInsights(force) {
-    insightsOpen = force === undefined ? !insightsOpen : force;
-    insightsEl.classList.toggle("open", insightsOpen);
-    insightsBtn.classList.toggle("active", insightsOpen);
-    if (insightsOpen) renderInsights();
-    setTimeout(function () { map.invalidateSize(); }, 360);
-  }
-  insightsBtn.onclick = function () { toggleInsights(); };
-  document.getElementById("insightsClose").onclick = function () { toggleInsights(false); };
-  document.querySelectorAll("#matrixMode button").forEach(function (b) {
-    b.onclick = function () {
-      document.querySelectorAll("#matrixMode button").forEach(function (x) { x.classList.remove("active"); });
-      b.classList.add("active"); state.matrixMode = b.dataset.m; renderInsights();
-    };
-  });
-
-  // ---- live heat layers (biodiversity records & river gauges) ----
-  var gbifBtn = document.getElementById("gbifBtn");
-  gbifBtn.onclick = function () {
-    state.gbifHeat = !state.gbifHeat;
-    gbifBtn.classList.toggle("active", state.gbifHeat);
-    document.getElementById("gbifLegend").style.display = state.gbifHeat ? "block" : "none";
-    if (state.gbifHeat) {
-      gbifHeat.addTo(map);
-      toast("Live GBIF biodiversity density on — zoom into any region to see within-country gaps.  © GBIF.org, © CARTO", 5000);
-    } else map.removeLayer(gbifHeat);
-    updateHeatBase();
-  };
-  var gaugeBtn = document.getElementById("gaugeBtn");
-  gaugeBtn.onclick = function () {
-    state.grdcHeat = !state.grdcHeat;
-    gaugeBtn.classList.toggle("active", state.grdcHeat);
-    document.getElementById("gaugeLegend").style.display = state.grdcHeat ? "block" : "none";
-    if (state.grdcHeat) {
-      grdcHeat.setLatLngs(grdcHeatData()); grdcHeat.addTo(map);
-      toast("GRDC river gauges on — the 'GBIF of water'. Zoom in to see gauged vs. ungauged basins.  © GRDC / BfG, © CARTO", 5000);
-    } else map.removeLayer(grdcHeat);
-    updateHeatBase();
-  };
-
-  function renderInsights() {
-    var sets = visibleFeatures().map(function (f) { return { id: f.id, name: f.properties.name, doms: countryInfo(f.id).domains }; });
-    var pair = {}, uni = {};
-    DOMAINS.forEach(function (a) { DOMAINS.forEach(function (b) { pair[a + "|" + b] = 0; uni[a + "|" + b] = 0; }); });
-    sets.forEach(function (c) {
-      DOMAINS.forEach(function (a) {
-        DOMAINS.forEach(function (b) {
-          var ha = c.doms.indexOf(a) !== -1, hb = c.doms.indexOf(b) !== -1;
-          if (ha && hb) pair[a + "|" + b]++;
-          if (ha || hb) uni[a + "|" + b]++;
-        });
-      });
+      group.appendChild(datasetsContainer);
+      container.appendChild(group);
     });
-    var jac = state.matrixMode === "jaccard";
-    var max = 1; DOMAINS.forEach(function (a) { DOMAINS.forEach(function (b) { max = Math.max(max, pair[a + "|" + b]); }); });
-    function cellColor(v, denom) {
-      var t = jac ? (denom ? v / denom : 0) : v / max;
-      if (!v) return "#2a3441";
-      var r = Math.round(225 - 180 * t), g = Math.round(238 - 120 * t), b = Math.round(248 - 70 * t);
-      return "rgb(" + r + "," + g + "," + b + ")";
-    }
-    var short = { "Ecology": "Eco", "Hydro": "Hydro", "Agriculture": "Agri", "Public Health": "Health" };
-    var html = '<table class="matrix"><tr><th></th>';
-    DOMAINS.forEach(function (b) { html += '<th>' + short[b] + '</th>'; });
-    html += '</tr>';
-    DOMAINS.forEach(function (a) {
-      html += '<tr><th class="rowh">' + a + '</th>';
-      DOMAINS.forEach(function (b) {
-        var v = pair[a + "|" + b], u = uni[a + "|" + b];
-        var disp = jac ? (u ? Math.round(100 * v / u) + "%" : "0%") : v;
-        var outline = a === b ? 'outline:2px solid ' + DOMAIN_COLOR[a] + ';outline-offset:-2px;' : '';
-        html += '<td style="' + outline + 'background:' + cellColor(v, u) + '" title="' +
-          (a === b ? v + ' countries have ' + a : v + ' countries have BOTH ' + a + ' and ' + b) + '">' + disp + '</td>';
-      });
-      html += '</tr>';
-    });
-    html += '</table><div style="font-size:11px;color:var(--muted);margin-top:8px">' +
-      (jac ? 'Jaccard = |A∩B| / |A∪B|. ' : 'Diagonal = countries with that domain; off-diagonal = overlap. ') +
-      'Toggle the global layer off and watch the off-diagonal collapse.</div>';
-    document.getElementById("matrix").innerHTML = html;
-
-    function chips(doms) {
-      return '<span class="dchips">' + DOMAINS.map(function (d) {
-        return '<i style="background:' + (doms.indexOf(d) !== -1 ? DOMAIN_COLOR[d] : "#2a3441") + '"></i>';
-      }).join("") + '</span>';
-    }
-    function row(c, desert) {
-      return '<div class="rank' + (desert ? ' desert' : '') + '">' + chips(c.doms) +
-        '<span class="nm">' + c.name + '</span><span class="num">' + c.doms.length + '/4</span></div>';
-    }
-    var sorted = sets.slice().sort(function (a, b) { return a.doms.length - b.doms.length || a.name.localeCompare(b.name); });
-    document.getElementById("rankDesert").innerHTML = sorted.slice(0, 10).map(function (c) { return row(c, true); }).join("");
-    document.getElementById("rankRich").innerHTML = sorted.reverse().slice(0, 10).map(function (c) { return row(c, false); }).join("");
   }
 
-  // ---- region presets ----
-  var REGIONS = [
-    { name: "World", fn: function () { map.setView([25, 10], 2); } },
-    { name: "Africa", b: [[-35, -20], [38, 52]] },
-    { name: "Asia", b: [[2, 38], [55, 150]] },
-    { name: "Europe", b: [[34, -12], [70, 45]] },
-    { name: "Americas", b: [[-55, -110], [62, -34]] }
-  ];
-  var regionsEl = document.getElementById("regions");
-  REGIONS.forEach(function (r, i) {
-    var btn = document.createElement("button");
-    btn.textContent = r.name; if (i === 0) btn.classList.add("active");
-    btn.onclick = function () {
-      regionsEl.querySelectorAll("button").forEach(function (b) { b.classList.remove("active"); });
-      btn.classList.add("active"); if (r.fn) r.fn(); else map.fitBounds(r.b);
-    };
-    regionsEl.appendChild(btn);
+  var yearFrom = document.getElementById("yearFrom");
+  var yearTo = document.getElementById("yearTo");
+  var yearRangeControl = document.getElementById("yearRangeControl");
+  var yearRangeSelected = document.getElementById("yearRangeSelected");
+  var yearlyBucketsToggle = document.getElementById("yearlyBucketsToggle");
+  var groupingToggle = document.getElementById("groupingToggle");
+  [yearFrom, yearTo].forEach(function (handle) {
+    handle.setAttribute("aria-valuemin", META.yearMin);
+    handle.setAttribute("aria-valuemax", META.yearMax);
   });
+  document.getElementById("yearMinLabel").textContent = META.yearMin;
+  document.getElementById("yearMaxLabel").textContent = META.yearMax;
 
-  // ---- search ----
-  var dl = document.getElementById("countryList"), byName = {};
-  WORLD_GEOJSON.features.slice().sort(function (a, b) { return a.properties.name.localeCompare(b.properties.name); })
-    .forEach(function (f) {
-      byName[f.properties.name.toLowerCase()] = f;
-      var o = document.createElement("option"); o.value = f.properties.name; dl.appendChild(o);
-    });
-  var search = document.getElementById("search");
-  function goToCountry() {
-    var f = byName[(search.value || "").trim().toLowerCase()]; if (!f) return;
-    var lyr = idToLayer[f.id]; if (lyr) map.fitBounds(lyr.getBounds(), { maxZoom: 5 });
-    openDetail(f.id, f.properties.name);
-  }
-  search.addEventListener("change", goToCountry);
-  search.addEventListener("keydown", function (e) { if (e.key === "Enter") goToCountry(); });
-
-  // ---- filter controls ----
-  // (domain checkboxes were removed from the UI; all domains stay on by default)
-  var af = document.getElementById("accessFilters");
-  ACCESS_GROUPS.forEach(function (a) {
-    var n = DATASETS.filter(function (ds) { return accessGroup(ds.access) === a; }).length;
-    var row = document.createElement("label"); row.className = "row";
-    row.innerHTML = '<input type="checkbox" checked>' + a + '<span class="count">' + n + '</span>';
-    row.querySelector("input").onchange = function (e) { state.access[a] = e.target.checked; redraw(); };
-    af.appendChild(row);
-  });
-  // time window — two sliders (from / to) + a per-year histogram of dataset availability
-  var yearFromEl = document.getElementById("yearFrom"), yearToEl = document.getElementById("yearTo"),
-      yearActive = document.getElementById("yearActive"), yearHistEl = document.getElementById("yearHist"),
-      yearRangeControl = document.getElementById("yearRangeControl");
-  [yearFromEl, yearToEl].forEach(function (el) { el.min = META.yearMin; el.max = META.yearMax; });
-  yearFromEl.value = META.yearMin; yearToEl.value = META.yearMax;
-  document.getElementById("yearMinL").textContent = META.yearMin;
-  document.getElementById("yearMaxL").textContent = META.yearMax;
-  // how many datasets have data in a given year (ignoring the window) — drives the histogram bars
-  function datasetsInYear(y) {
-    return DATASETS.filter(function (d) { return !d.years || (d.years[0] <= y && d.years[1] >= y); }).length;
-  }
-  function renderYearHist() {
-    var html = "", maxN = 1, yMin = META.yearMin, yMax = META.yearMax, counts = {};
-    for (var y = yMin; y <= yMax; y++) { counts[y] = datasetsInYear(y); if (counts[y] > maxN) maxN = counts[y]; }
-    for (var y2 = yMin; y2 <= yMax; y2++) {
-      var h = Math.round(100 * counts[y2] / maxN);
-      var inWin = y2 >= state.yearFrom && y2 <= state.yearTo;
-      html += '<div class="yb' + (inWin ? ' in' : '') + '" style="height:' + h + '%" title="' + y2 + ': ' + counts[y2] + ' datasets"></div>';
-    }
-    yearHistEl.innerHTML = html;
-  }
-  function updYearLabel() {
-    document.getElementById("yearFromVal").textContent = state.yearFrom;
-    document.getElementById("yearToVal").textContent = state.yearTo;
-    document.getElementById("yearRangeVal").textContent =
-      state.yearFrom === state.yearTo ? state.yearFrom : state.yearFrom + "–" + state.yearTo;
-    var n = DATASETS.filter(inYearWindow).length;
-    yearActive.textContent = n + " / " + DATASETS.length + " datasets";
+  function updateYearControls() {
     var span = META.yearMax - META.yearMin || 1;
-    yearRangeControl.style.setProperty("--range-start", (100 * (state.yearFrom - META.yearMin) / span) + "%");
-    yearRangeControl.style.setProperty("--range-end", (100 * (state.yearTo - META.yearMin) / span) + "%");
-    renderYearHist();
+    var fromPosition = 100 * (state.yearFrom - META.yearMin) / span;
+    var toPosition = 100 * (state.yearTo - META.yearMin) / span;
+    yearFrom.style.left = fromPosition + "%";
+    yearTo.style.left = toPosition + "%";
+    yearRangeSelected.style.left = fromPosition + "%";
+    yearRangeSelected.style.width = (toPosition - fromPosition) + "%";
+    yearFrom.setAttribute("aria-valuenow", state.yearFrom);
+    yearTo.setAttribute("aria-valuenow", state.yearTo);
+    yearFrom.dataset.value = state.yearFrom;
+    yearTo.dataset.value = state.yearTo;
+    yearlyBucketsToggle.classList.toggle("active", state.yearlyHistograms);
+    yearlyBucketsToggle.setAttribute("aria-pressed", state.yearlyHistograms);
+    yearlyBucketsToggle.setAttribute("aria-label",
+      (state.yearlyHistograms ? "Disable" : "Enable") + " annual time bins");
+    yearlyBucketsToggle.title = state.yearlyHistograms
+      ? "Currently showing annual time bins — switch to the aggregated view"
+      : "Currently showing the aggregated view — split each dataset sector into annual time bins";
+    yearlyBucketsToggle.querySelector("span").textContent = state.yearlyHistograms ? "🗓" : "x̄";
+    groupingToggle.classList.toggle("active", state.groupedDonuts);
+    groupingToggle.setAttribute("aria-pressed", state.groupedDonuts);
+    groupingToggle.setAttribute("aria-label", state.groupedDonuts
+      ? "Show individual dataset radial sectors" : "Group radial sectors by category");
+    groupingToggle.title = state.groupedDonuts
+      ? "Currently grouped by category — switch to individual dataset sectors"
+      : "Currently showing individual datasets — group radial sectors by category";
+    groupingToggle.querySelector("span").textContent = state.groupedDonuts ? "⊞" : "◫";
+    document.getElementById("yearRangeVal").textContent = state.yearFrom + "–" + state.yearTo;
+    renderFilters();
   }
-  function onYearInput() {
-    var a = parseInt(yearFromEl.value, 10), b = parseInt(yearToEl.value, 10);
-    if (a > b) {                                    // keep from ≤ to by pushing the other thumb
-      if (document.activeElement === yearFromEl) { b = a; yearToEl.value = b; }
-      else { a = b; yearFromEl.value = a; }
+
+  function setHandleYear(handle, year) {
+    year = Math.max(META.yearMin, Math.min(META.yearMax, Math.round(year)));
+    if (handle === yearFrom) state.yearFrom = Math.min(year, state.yearTo);
+    else state.yearTo = Math.max(year, state.yearFrom);
+    redraw();
+  }
+
+  function yearAtPointer(clientX) {
+    var bounds = yearRangeControl.getBoundingClientRect();
+    var amount = Math.max(0, Math.min(1, (clientX - bounds.left) / bounds.width));
+    return META.yearMin + amount * (META.yearMax - META.yearMin);
+  }
+
+  function bindHandle(handle) {
+    handle.addEventListener("pointerdown", function (event) {
+      event.preventDefault();
+      handle.setPointerCapture(event.pointerId);
+      handle.classList.add("dragging");
+      setHandleYear(handle, yearAtPointer(event.clientX));
+    });
+    handle.addEventListener("pointermove", function (event) {
+      if (!handle.hasPointerCapture(event.pointerId)) return;
+      setHandleYear(handle, yearAtPointer(event.clientX));
+    });
+    function finishDrag(event) {
+      if (handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId);
+      handle.classList.remove("dragging");
     }
-    state.yearFrom = a; state.yearTo = b; updYearLabel(); redraw();
+    handle.addEventListener("pointerup", finishDrag);
+    handle.addEventListener("pointercancel", finishDrag);
+    handle.addEventListener("keydown", function (event) {
+      var current = handle === yearFrom ? state.yearFrom : state.yearTo;
+      var next = current;
+      if (event.key === "ArrowLeft" || event.key === "ArrowDown") next--;
+      else if (event.key === "ArrowRight" || event.key === "ArrowUp") next++;
+      else if (event.key === "PageDown") next -= 10;
+      else if (event.key === "PageUp") next += 10;
+      else if (event.key === "Home") next = META.yearMin;
+      else if (event.key === "End") next = META.yearMax;
+      else return;
+      event.preventDefault();
+      setHandleYear(handle, next);
+    });
   }
-  yearFromEl.oninput = onYearInput; yearToEl.oninput = onYearInput;
-  yearFromEl.onpointerdown = function () { yearFromEl.style.zIndex = 4; yearToEl.style.zIndex = 3; };
-  yearToEl.onpointerdown = function () { yearToEl.style.zIndex = 4; yearFromEl.style.zIndex = 2; };
-  var yearlyHistogramsEl = document.getElementById("yearlyHistograms");
-  yearlyHistogramsEl.onchange = function (event) {
-    state.yearlyHistograms = event.target.checked;
+  bindHandle(yearFrom); bindHandle(yearTo);
+  yearRangeControl.addEventListener("pointerdown", function (event) {
+    if (event.target === yearFrom || event.target === yearTo) return;
+    var year = yearAtPointer(event.clientX);
+    var handle = Math.abs(year - state.yearFrom) <= Math.abs(year - state.yearTo) ? yearFrom : yearTo;
+    handle.focus();
+    setHandleYear(handle, year);
+  });
+  yearlyBucketsToggle.onclick = function () {
+    state.yearlyHistograms = !state.yearlyHistograms;
+    redraw();
+  };
+  groupingToggle.onclick = function () {
+    state.groupedDonuts = !state.groupedDonuts;
     redraw();
   };
 
-  function syncControls() {
-    document.querySelectorAll('#accessFilters input').forEach(function (i, k) { i.checked = state.access[ACCESS_GROUPS[k]]; });
-    yearlyHistogramsEl.checked = state.yearlyHistograms;
-    yearFromEl.value = state.yearFrom; yearToEl.value = state.yearTo; updYearLabel();
-  }
+  document.getElementById("selectAll").onclick = function () {
+    datasetOrder.forEach(function (key) { state.selected[key] = true; }); redraw();
+  };
+  document.getElementById("selectNone").onclick = function () {
+    datasetOrder.forEach(function (key) { state.selected[key] = false; }); redraw();
+  };
 
-  // ---- shareable URL state ----
-  var shareHash = "";
-  function syncHash() {
-    shareHash = window.DataDeserts.shareState.serialize(state, DOMAINS, ACCESS_GROUPS);
-    // replaceState can throw on file:// in some browsers — never let it break redraw.
-    try { history.replaceState(null, "", shareHash); } catch (e) { /* ignore */ }
-  }
-  function loadHash() {
-    if (window.DataDeserts.shareState.hydrate(location.hash, state, META, DOMAINS, ACCESS_GROUPS)) {
-      state.mode = "assessment";
-      syncControls();
+  function yearStrip(key, iso) {
+    var dataset = DATASETS[key];
+    var yearly = dataset.records[iso] || {};
+    var years = [];
+    for (var year = state.yearFrom; year <= state.yearTo; year++) {
+      var count = yearly[String(year)] || 0;
+      years.push(count);
     }
+    return '<div class="year-strip" style="grid-template-columns:repeat(' + years.length + ',1fr)">' +
+      years.map(function (count, index) {
+        var opacity = count ? 0.25 + 0.75 * minMaxScore(count, datasetYearRanges[key]) : 0;
+        return '<i title="' + (state.yearFrom + index) + ': ' + formatNumber(count) + '" style="background:' +
+      dataset.color + ';opacity:' + opacity + '"></i>';
+      }).join("") + '</div><div class="year-axis"><span>' + state.yearFrom + '</span><span>' + state.yearTo + '</span></div>';
   }
-  function toast(msg, ms) {
-    var t = document.getElementById("toast"); t.textContent = msg; t.classList.add("show");
-    clearTimeout(t._tm); t._tm = setTimeout(function () { t.classList.remove("show"); }, ms || 2200);
+
+  function seriesYearStrip(series, iso) {
+    var years = [];
+    for (var year = state.yearFrom; year <= state.yearTo; year++) {
+      var count = seriesYearCount(series, iso, year);
+      years.push(count);
+    }
+    return '<div class="year-strip" style="grid-template-columns:repeat(' + years.length + ',1fr)">' +
+      years.map(function (count, index) {
+        var opacity = count ? 0.25 + 0.75 * minMaxScore(count, seriesYearRanges[series.id]) : 0;
+        return '<i title="' + (state.yearFrom + index) + ': ' + formatNumber(count) + '" style="background:' +
+          series.color + ';opacity:' + opacity + '"></i>';
+      }).join("") + '</div><div class="year-axis"><span>' + state.yearFrom + '</span><span>' + state.yearTo + '</span></div>';
   }
-  document.getElementById("linkBtn").onclick = function () {
-    syncHash();
-    try { location.hash = shareHash; } catch (e) { /* ignore */ }   // ensure it's in the address bar
-    var url = location.origin && location.origin !== "null"
-      ? location.href : (location.pathname + shareHash);
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(url).then(function () { toast("View link copied to clipboard"); },
-        function () { toast("Link saved to the address bar — copy it from there"); });
-    } else { toast("Link saved to the address bar — copy it from there"); }
-  };
 
-  // ---- PNG export ----
-  document.getElementById("pngBtn").onclick = function () {
-    try { exportPNG(); } catch (err) { toast("PNG export failed: " + err.message); }
-  };
-  function exportPNG() {
-    var mapEl = document.getElementById("map");
-    var mr = mapEl.getBoundingClientRect();
-    var scale = 2, W = mr.width, H = mr.height;
-    var canvas = document.createElement("canvas");
-    canvas.width = W * scale; canvas.height = H * scale;
-    var ctx = canvas.getContext("2d"); ctx.scale(scale, scale);
-    // ocean background (approx the CSS radial gradient)
-    var bg = ctx.createRadialGradient(W / 2, 0, 0, W / 2, 0, H * 1.2);
-    bg.addColorStop(0, "#123049"); bg.addColorStop(0.6, "#0a2233"); bg.addColorStop(1, "#06151f");
-    ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+  function datasetDetailHTML(key, iso, nested) {
+    var dataset = DATASETS[key], count = datasetCount(key, iso);
+    return '<div class="dataset-detail' + (nested ? ' nested' : '') + '"><h3><i style="background:' +
+      dataset.color + '"></i><a href="' + dataset.url + '" target="_blank" rel="noopener" style="color:inherit">' +
+      escapeHTML(dataset.name) + '</a></h3><p>' + formatNumber(count) + ' ' + escapeHTML(dataset.unit) +
+      ' in this window</p>' + yearStrip(key, iso) + '</div>';
+  }
 
-    var svg = map.getPanes().overlayPane.querySelector("svg");
-    if (!svg) { toast("Nothing to export yet"); return; }
-    var sr = svg.getBoundingClientRect();
-    var clone = svg.cloneNode(true);
-    clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
-    clone.setAttribute("width", sr.width); clone.setAttribute("height", sr.height);
-    var data = new XMLSerializer().serializeToString(clone);
-    var img = new Image();
-    img.onload = function () {
-      ctx.drawImage(img, sr.left - mr.left, sr.top - mr.top, sr.width, sr.height);
-      drawOverlayChrome(ctx, W, H);
-      var a = document.createElement("a");
-      a.download = "data-deserts-" + state.mode + "-" + state.yearFrom + "_" + state.yearTo + "-dhs.png";
-      a.href = canvas.toDataURL("image/png"); a.click();
-      toast("PNG downloaded");
+  function categoryDetailHTML(series, iso) {
+    var keys = series.keys.filter(function (key) { return state.selected[key]; });
+    var swatches = keys.map(function (key) {
+      return '<i style="background:' + DATASETS[key].color + '"></i>';
+    }).join("");
+    return '<section class="category-detail"><h3><span class="category-swatches">' + swatches + '</span>' +
+      escapeHTML(series.label) + '</h3><p>' + formatNumber(seriesCount(series, iso)) +
+      ' records in this window</p>' + seriesYearStrip(series, iso) +
+      '<details class="dataset-breakdown"><summary>Show dataset details</summary>' +
+      keys.map(function (key) { return datasetDetailHTML(key, iso, true); }).join("") + '</details></section>';
+  }
+
+  function openDetail(feature) {
+    var iso = feature.id, panel = document.getElementById("detail");
+    panel.dataset.iso = iso;
+    document.getElementById("detailName").textContent = feature.properties.name;
+    document.getElementById("detailMeta").textContent = countryInScope(iso)
+      ? formatNumber(countryCount(iso)) + " selected records"
+      : "Outside DHS participant-data scope";
+    var keys = selectedKeys();
+    document.getElementById("detailBody").innerHTML = !countryInScope(iso)
+      ? '<div class="empty">Records are shown only for countries with DHS participant data.</div>'
+      : keys.length ? (state.groupedDonuts
+        ? displaySeries().filter(function (series) { return series.selected; }).map(function (series) {
+          return categoryDetailHTML(series, iso);
+        }).join("")
+        : keys.map(function (key) { return datasetDetailHTML(key, iso, false); }).join(""))
+      : '<div class="empty">Select at least one dataset to see its records.</div>';
+    panel.style.display = "block";
+  }
+  document.getElementById("detailClose").onclick = function () { document.getElementById("detail").style.display = "none"; };
+
+  var regions = [
+    { name: "World", view: function () { map.setView([25, 15], 4); } },
+    { name: "Africa", bounds: [[-35, -20], [38, 52]] },
+    { name: "Asia", bounds: [[2, 38], [55, 150]] },
+    { name: "Europe", bounds: [[34, -12], [70, 45]] },
+    { name: "Americas", bounds: [[-55, -110], [62, -34]] }
+  ];
+  regions.forEach(function (region, index) {
+    var button = document.createElement("button"); button.textContent = region.name;
+    if (!index) button.className = "active";
+    button.onclick = function () {
+      document.querySelectorAll("#regions button").forEach(function (item) { item.classList.remove("active"); });
+      button.classList.add("active");
+      if (region.view) region.view(); else map.fitBounds(region.bounds);
     };
-    img.onerror = function () { toast("PNG export failed while rasterising the map"); };
-    img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(data);
-  }
-  function drawOverlayChrome(ctx, W, H) {
-    // title
-    ctx.fillStyle = "rgba(15,22,32,.85)"; roundRect(ctx, 12, 12, 330, 56, 9); ctx.fill();
-    ctx.fillStyle = "#e7edf3"; ctx.font = "600 17px -apple-system,Segoe UI,Roboto,sans-serif";
-    ctx.fillText("Data Deserts — cross-domain coverage", 24, 34);
-    ctx.fillStyle = "#9fb0c0"; ctx.font = "12px -apple-system,Segoe UI,Roboto,sans-serif";
-    var sub = modeLabel() + "  ·  " + state.yearFrom + "–" + state.yearTo + "  ·  DHS countries";
-    ctx.fillText(sub, 24, 54);
-    // legend chip strip (domains / count)
-    if (state.mode === "domains") {
-      var labels = ["0", "1", "2", "3", "4"];
-      ctx.font = "11px sans-serif";
-      labels.forEach(function (lab, i) {
-        var x = 16 + i * 56, y = H - 30;
-        ctx.fillStyle = DOMAIN_COUNT[Math.min(i, 4)]; roundRect(ctx, x, y, 48, 18, 4); ctx.fill();
-        ctx.fillStyle = "#fff"; ctx.fillText(lab + " dom", x + 6, y + 13);
-      });
-    }
-  }
-  function modeLabel() {
-    return { assessment: "overall record assessment", domains: "domains with data", datasets: "dataset count", single: state.singleDomain,
-             surveys: "public-health surveys", recency: "most recent survey",
-             density: "GBIF record density", grdc: "GRDC gauge density" }[state.mode];
-  }
-  function roundRect(ctx, x, y, w, h, r) {
-    ctx.beginPath();
-    ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
-    ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
-  }
+    document.getElementById("regions").appendChild(button);
+  });
 
-  // ---- intro / help overlay ----
-  var introEl = document.getElementById("intro");
-  function openIntro() { introEl.classList.add("open"); }
-  function closeIntro() {
-    introEl.classList.remove("open");
-    try { localStorage.setItem("dd_seen", "1"); } catch (e) { /* file:// may block */ }
+  var countryByName = {}, countryList = document.getElementById("countryList");
+  WORLD_GEOJSON.features.slice().sort(function (a, b) { return a.properties.name.localeCompare(b.properties.name); })
+    .forEach(function (feature) {
+      countryByName[feature.properties.name.toLowerCase()] = feature;
+      var option = document.createElement("option"); option.value = feature.properties.name; countryList.appendChild(option);
+    });
+  function searchCountry() {
+    var feature = countryByName[document.getElementById("search").value.trim().toLowerCase()];
+    if (!feature) return;
+    var entry = countryEntries.find(function (item) { return item.feature === feature; });
+    if (entry) map.fitBounds(entry.layer.getBounds(), { maxZoom: 5 });
+    openDetail(feature);
   }
-  document.getElementById("introClose").onclick = closeIntro;
-  document.getElementById("helpBtn").onclick = openIntro;
-  function maybeShowIntro() {
-    var seen = false;
-    try { seen = localStorage.getItem("dd_seen") === "1"; } catch (e) { /* ignore */ }
-    if (!seen && (!location.hash || location.hash.length < 2)) openIntro();   // skip if opening a shared view
-  }
+  document.getElementById("search").onchange = searchCountry;
+  document.getElementById("search").onkeydown = function (event) { if (event.key === "Enter") searchCountry(); };
 
-  // ---- init ----
-  syncControls();
+  function toast(message) {
+    var element = document.getElementById("toast"); element.textContent = message; element.classList.add("show");
+    clearTimeout(element.timer); element.timer = setTimeout(function () { element.classList.remove("show"); }, 2200);
+  }
+  document.getElementById("shareButton").onclick = function () {
+    syncHash();
+    var url = location.href;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(function () { toast("View link copied"); }, function () { toast("Copy the URL from the address bar"); });
+    } else toast("Copy the URL from the address bar");
+  };
+
+  function setIntro(open) {
+    document.getElementById("intro").classList.toggle("open", open);
+  }
+  document.getElementById("introClose").onclick = function () { setIntro(false); };
+  document.getElementById("helpButton").onclick = function () { setIntro(true); };
+
+  function setLicences(open) {
+    var modal = document.getElementById("licencesModal");
+    modal.classList.toggle("open", open);
+    modal.setAttribute("aria-hidden", open ? "false" : "true");
+    if (open) document.getElementById("licencesClose").focus();
+  }
+  document.getElementById("licencesButton").onclick = function () { setLicences(true); };
+  document.getElementById("licencesClose").onclick = function () { setLicences(false); };
+  document.getElementById("licencesModal").onclick = function (event) {
+    if (event.target === event.currentTarget) setLicences(false);
+  };
+  document.addEventListener("keydown", function (event) {
+    if (event.key === "Escape") setLicences(false);
+  });
+
   loadHash();
   redraw();
-  maybeShowIntro();
 })();

@@ -1,198 +1,174 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Data Deserts — cross-domain data coverage</title>
-<link rel="stylesheet" href="vendor/leaflet.css" />
-<link rel="stylesheet" href="styles/app.css" />
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Data Deserts — biodiversity record coverage</title>
+  <link rel="stylesheet" href="vendor/leaflet.css" />
+  <link rel="stylesheet" href="styles/app.css" />
 </head>
 <body>
-  <div id="sidebar">
+  <aside id="sidebar">
     <header>
       <h1><span class="dot"></span>Data Deserts</h1>
-      <div class="sub">This map focuses only on countries covered by the
-        <a href="https://dhsprogram.com/who-we-are/about-us.cfm" target="_blank" rel="noopener">Demographic and Health Surveys (DHS) Program</a>.
-        DHS studies typically focus on low- and middle-income countries (LMICs), although coverage
-        is not identical to an income classification. See the official
-        <a href="https://dhsprogram.com/countries/" target="_blank" rel="noopener">DHS country list</a>
-        for included countries and the World Bank's
-        <a href="https://datahelpdesk.worldbank.org/knowledgebase/articles/906519-world-bank-country-and-lending-groups" target="_blank" rel="noopener">current income groups</a>
-        to identify coverage outside the current LMIC grouping.</div>
+      <p><b>Data Deserts</b> shows how limited investment in data leaves little overlapping evidence
+        across Ecology, Hydrology, Agriculture, and Public Health—domains that are deeply interconnected.
+        Without comparable coverage across them, cross-domain research is constrained precisely
+        where joined-up evidence is most needed.</p>
+      <p>This map focuses on countries covered by the
+        <a href="https://dhsprogram.com/countries/" target="_blank" rel="noopener">Demographic and Health Surveys (DHS) Program</a>.
+        DHS studies mainly cover low- and middle-income countries, though this is a survey-coverage scope rather than an income classification.</p>
     </header>
 
-    <div class="section assessment-intro">
-      <h2>Overall record assessment</h2>
-      <p>Each country has one four-part chart. Colour strength compares countries <b>within the same domain only</b>;
-        it does not compare biodiversity records with gauges or surveys.</p>
-    </div>
+    <section class="legend-section">
+      <h2>Legend</h2>
+      <div id="datasetLegend"></div>
+      <div class="legend-ends"><span>Relative within each sector</span><span id="legendMax">Grey = no records</span></div>
+    </section>
 
-    <div class="section legend-section">
-      <h2>Legend<span class="lg-mode" id="legendTitle"></span></h2>
-      <div id="legend"></div>
-    </div>
-
-    <div class="section">
-      <h2>Time window — data available by year</h2>
-      <div id="yearHist" class="yearhist" title="How many datasets have data in each year"></div>
-      <div class="rangelab"><span>Showing <b id="yearRangeVal"></b></span><span class="count" id="yearActive"></span></div>
-      <div class="dual-range-labels">
-        <span>From <b id="yearFromVal"></b></span>
-        <span>To <b id="yearToVal"></b></span>
+    <section class="filters-section">
+      <h2>Filters</h2>
+      <h3 class="filter-subheading">Time window</h3>
+      <div id="yearHist" class="yearhist"></div>
+      <div class="range-caption"><b id="yearRangeVal"></b><span id="recordTotal"></span></div>
+      <div class="dual-range" id="yearRangeControl" aria-label="Selected time window">
+        <div class="dual-range-track"></div>
+        <div class="dual-range-selected" id="yearRangeSelected"></div>
+        <button type="button" class="range-handle" id="yearFrom" role="slider" aria-label="First year"></button>
+        <button type="button" class="range-handle" id="yearTo" role="slider" aria-label="Last year"></button>
       </div>
-      <div class="dual-range" id="yearRangeControl">
-        <div class="dual-range-track" aria-hidden="true"></div>
-        <input type="range" id="yearFrom" aria-label="First year in time window" />
-        <input type="range" id="yearTo" aria-label="Last year in time window" />
+      <div class="legend-ends"><span id="yearMinLabel"></span><span id="yearMaxLabel"></span></div>
+      <h3 class="filter-subheading grouping-subheading">Grouping</h3>
+      <div class="filter-state-buttons" aria-label="Visualisation filters">
+        <button type="button" class="icon-state-button" id="yearlyBucketsToggle"
+          title="Annual time bins — Split each dataset sector into one bin per year; gaps mean no records."
+          aria-label="Enable annual time bins" aria-pressed="false"><span aria-hidden="true">x̄</span></button>
+        <button type="button" class="icon-state-button" id="groupingToggle"
+          title="Group radial sectors by category" aria-label="Group radial sectors by category"
+          aria-pressed="false"><span aria-hidden="true">◫</span></button>
       </div>
-      <div class="legend-ends" style="margin-top:3px"><span id="yearMinL"></span><span id="yearMaxL"></span></div>
-      <div class="histogram-control">
-        <label class="toggle histogram-toggle">
-          <input type="checkbox" id="yearlyHistograms" />
-          <span class="t-title">Show yearly buckets in each donut</span>
-        </label>
-        <button type="button" class="histogram-info" aria-label="About yearly donut buckets: Splits every domain sector into one bucket per year in this window. Missing years are left blank. Health uses survey years; other domains use dataset coverage spans."
-          data-tooltip="Splits every domain sector into one bucket per year in this window. Missing years are left blank. Health uses survey years; other domains use dataset coverage spans.">i</button>
-      </div>
-    </div>
+    </section>
 
-    <details class="adv">
-      <summary>Advanced controls</summary>
-
-      <div class="section">
-        <h2>Access</h2>
-        <div id="accessFilters"></div>
-      </div>
-
+    <details class="advanced">
+      <summary>Advanced filtering</summary>
+      <section>
+        <h2>Categories and datasets</h2>
+        <div id="datasetFilters"></div>
+        <div class="filter-actions">
+          <button id="selectAll">Select all</button>
+          <button id="selectNone">Clear</button>
+        </div>
+      </section>
     </details>
+
+    <section>
+      <h2>Other dataset types</h2>
+      <div class="placeholder"><i></i><span><b>Hydrology</b><small>Coming later</small></span></div>
+    </section>
 
     <div class="credit">
       <h2>About the project</h2>
       <p>This project grew out of the
         <a href="https://www.imperial.ac.uk/news/259556/call-early-career-researchers-develop-healthy/" target="_blank" rel="noopener">European Talent Academy 2025</a>
         programme as a collaboration between researchers at Imperial College London and Politecnico di Milano.</p>
+      <p>Research project authors are listed alphabetically by surname:</p>
       <ul>
+        <li><a href="https://re.public.polimi.it/cris/rp/rp50671" target="_blank" rel="noopener">Nikolas Galli</a> — Politecnico di Milano</li>
+        <li><a href="https://profiles.imperial.ac.uk/paraskevi.seferidi14" target="_blank" rel="noopener">Paraskevi Seferidi</a> — Imperial College London</li>
         <li><a href="https://www.imperial.ac.uk/people/o.serban" target="_blank" rel="noopener">Ovidiu Șerban</a> — Imperial College London</li>
         <li><a href="https://profiles.imperial.ac.uk/jessica.williams15" target="_blank" rel="noopener">Jessica Williams</a> — Imperial College London</li>
-        <li><a href="https://profiles.imperial.ac.uk/paraskevi.seferidi14" target="_blank" rel="noopener">Paraskevi Seferidi</a> — Imperial College London</li>
-        <li><a href="https://re.public.polimi.it/cris/rp/rp50671" target="_blank" rel="noopener">Nikolas Galli</a> — Politecnico di Milano</li>
       </ul>
-      <p>The visualisation was developed with
+      <p>The visualisation was initially developed by
         <a href="https://www.linkedin.com/in/rose-cymbler/" target="_blank" rel="noopener">Rose Cymbler</a>,
-        who was a student and Data Visualisation Intern in 2026 when the visualisation project began.</p>
+        who was a student and Data Visualisation Intern in 2026, and subsequently expanded by
+        <a href="https://www.imperial.ac.uk/people/o.serban" target="_blank" rel="noopener">Ovidiu Șerban</a>.</p>
     </div>
-  </div>
+  </aside>
 
-  <div id="mapwrap">
+  <button type="button" id="sidebarToggle" aria-label="Collapse sidebar" title="Collapse sidebar"
+    aria-expanded="true"><span class="sidebar-tab-title">Data Deserts</span><span class="sidebar-toggle-icon" aria-hidden="true">‹</span></button>
+
+  <main id="mapwrap">
     <div id="map"></div>
-
-    <div id="mapCaption"></div>
-
     <div id="toolbar">
-      <div class="pillbar" id="regions"></div>
+      <div id="regions" class="pillbar"></div>
       <input id="search" list="countryList" placeholder="Search a country…" autocomplete="off" />
       <datalist id="countryList"></datalist>
-      <div class="menu">
-        <button id="moreBtn">More ▾</button>
-        <div id="moreMenu">
-          <button id="insightsBtn">Insights — how the data types overlap</button>
-          <div class="menu-sep"></div>
-          <button id="gbifBtn" title="Live density of species observations from GBIF — zoom in to see within-country gaps.">Biodiversity density (GBIF)</button>
-          <button id="gaugeBtn" title="River-flow gauging stations from GRDC — the 'GBIF of water'. Zoom in to see gauged vs. ungauged basins.">River-gauge density (GRDC)</button>
-          <div class="menu-sep"></div>
-          <button id="pngBtn" title="Download the current map as a PNG image">Save image (PNG)</button>
-          <button id="linkBtn" title="Copy a link that reproduces this exact view">Share this view (copy link)</button>
-          <div class="menu-sep"></div>
-          <button id="helpBtn" title="Reopen the welcome screen">Help &amp; welcome</button>
-        </div>
-      </div>
+      <button id="shareButton">Share view</button>
+      <button id="licencesButton">Data &amp; licences</button>
+      <button id="helpButton">Help</button>
     </div>
-
-    <div id="fpBanner">
-      <span id="fpText"></span>
-      <button class="link" id="fpClear">clear</button>
-    </div>
-
-    <div id="gbifLegend">
-      <div class="gl-title">GBIF biodiversity records (live)</div>
-      <div class="gl-bar"></div>
-      <div class="gl-ends"><span>few / none</span><span>many</span></div>
-      <div class="gl-hint">Each cell = density of species observations. <b>Zoom in</b> (scroll) to see
-        within-country patchiness — e.g. the Amazon vs. interior Peru. The colour scale is
-        <b>relative to the current zoom</b>, so compare patterns within a view, not across zooms.</div>
-    </div>
-
-    <div id="gaugeLegend" style="display:none">
-      <div class="gl-title">GRDC river gauges (10,701 stations)</div>
-      <div class="gl-bar" style="background:linear-gradient(90deg,#08203a,#1c6fae,#54c0e8,#d7f0ff)"></div>
-      <div class="gl-ends"><span>few / none</span><span>many</span></div>
-      <div class="gl-hint">Each glow = density of discharge-gauging stations. <b>Zoom in</b> to see
-        gauged vs. <b>ungauged basins</b> — like GBIF, this "global" dataset is really a
-        scatter of local stations.</div>
-    </div>
-
+    <div id="mapCaption"></div>
     <div id="toast"></div>
+
+    <aside id="detail">
+      <button class="close" id="detailClose" aria-label="Close">×</button>
+      <h2 id="detailName"></h2>
+      <div id="detailMeta"></div>
+      <div id="detailBody"></div>
+    </aside>
 
     <div id="intro">
       <div class="intro-card">
         <h2>Where does data exist — and where doesn't it?</h2>
-        <p>This map gives an overall, domain-segmented record assessment for countries included in the
+        <p>This map gives an overall, dataset-segmented record assessment for countries included in the
           <a href="https://dhsprogram.com/countries/" target="_blank" rel="noopener">DHS Program</a>.
-          Each segment is normalized only against the same domain in other DHS countries. Pick a
-          <b>time window</b> and <b>click a country</b> to inspect its underlying data.
-          Countries without DHS coverage remain greyed out.</p>
-        <div class="intro-btns">
-          <button id="introClose" class="ghost">Explore the map</button>
-        </div>
-        <div class="intro-foot">You can reopen this anytime with <b>Help</b> (under “More” in the top bar).</div>
+          Each radial segment is normalized only against the same dataset or category in other DHS-covered countries. Pick a
+          <b>time window</b>, filter the included datasets, and <b>click a country</b> to inspect its underlying records.
+          Countries without DHS participant data remain greyed out.</p>
+        <div class="intro-actions"><button id="introClose">Explore the map</button></div>
+        <small>You can reopen this introduction with Help.</small>
       </div>
     </div>
 
-    <div id="detail">
-      <div class="dh">
-        <span class="close" id="detailClose">&times;</span>
-        <h3 id="dName"></h3>
-        <div class="meta" id="dMeta"></div>
+    <div id="licencesModal" class="modal-overlay" role="dialog" aria-modal="true"
+      aria-labelledby="licencesTitle" aria-hidden="true">
+      <div class="modal-card licences-card">
+        <button class="close" id="licencesClose" aria-label="Close data acknowledgements">×</button>
+        <h2 id="licencesTitle">Data acknowledgements &amp; licences</h2>
+        <p>This visualisation uses processed coverage summaries from the following providers. Each
+          source remains subject to its own licence, attribution requirements, and access terms.</p>
+        <div class="licence-list">
+          <section><h3>BioTIME</h3><p>BioTIME Project. Individual studies retain their own licences;
+            consult the study metadata and cite both BioTIME and the original study.</p>
+            <a href="https://biotime.st-andrews.ac.uk/usageGuidelines.php" target="_blank" rel="noopener">Usage guidelines</a></section>
+          <section><h3>Living Planet Database</h3><p>Zoological Society of London and WWF.
+            Used under the Living Planet Database Data Use Policy, including its attribution and
+            third-party sharing restrictions.</p>
+            <a href="https://www.livingplanetindex.org/documents/data_agreement.pdf" target="_blank" rel="noopener">Data Use Policy</a></section>
+          <section><h3>PREDICTS</h3><p>Natural History Museum PREDICTS database, release 2016,
+            licensed under Creative Commons Attribution-NonCommercial 4.0.</p>
+            <a href="https://data.nhm.ac.uk/dataset/the-2016-release-of-the-predicts-database-v1-1" target="_blank" rel="noopener">Dataset and licence</a></section>
+          <section><h3>GBIF</h3><p>GBIF-mediated occurrence data. Source datasets use record-level
+            CC0, CC BY 4.0, or CC BY-NC 4.0 terms; the applicable attribution and non-commercial
+            conditions must be followed.</p>
+            <a href="https://www.gbif.org/terms" target="_blank" rel="noopener">GBIF terms</a></section>
+          <section><h3>Demographic and Health Surveys (DHS)</h3><p>The DHS Program. Access is
+            project-specific; DHS microdata must not be redistributed or exposed through a data tool.</p>
+            <a href="https://dhsprogram.com/data/terms-of-use.cfm" target="_blank" rel="noopener">Terms of use</a></section>
+          <section><h3>Multiple Indicator Cluster Surveys (MICS)</h3><p>UNICEF MICS. Survey files
+            and derived use remain subject to UNICEF and survey-specific access and use conditions.</p>
+            <a href="https://mics.unicef.org/surveys" target="_blank" rel="noopener">MICS surveys</a></section>
+          <section><h3>Living Standards Measurement Study (LSMS)</h3><p>World Bank Microdata
+            Library. Study-level access types and licences apply to the LSMS participant summaries.</p>
+            <a href="https://microdata.worldbank.org/catalog/lsms" target="_blank" rel="noopener">LSMS collection</a></section>
+          <section><h3>LSMS–Integrated Surveys on Agriculture (LSMS-ISA)</h3><p>World Bank LSMS-ISA.
+            Study-level access terms apply to the agricultural observation summaries.</p>
+            <a href="https://www.worldbank.org/en/programs/lsms/initiatives/lsms-ISA" target="_blank" rel="noopener">LSMS-ISA programme</a></section>
+        </div>
+        <div class="redistribution-notice"><strong>Redistribution notice.</strong> The processed
+          deployment bundle is provided for this interactive research visualisation, not as a data
+          redistribution channel. Do not copy or redistribute it as a dataset without first obtaining
+          consent from the Data Deserts research team and satisfying every original provider's licence
+          and permission requirements. Project consent does not replace provider consent, and nothing
+          in this notice limits reuse rights already granted by an applicable open licence.</div>
       </div>
-      <div class="dbody" id="dBody"></div>
     </div>
-
-    <div id="insights">
-      <div class="ih">
-        <h2>Domain overlap &amp; deserts</h2>
-        <span class="hint">live — reacts to your filters</span>
-        <span class="close" id="insightsClose">&times;</span>
-      </div>
-      <div class="grid">
-        <div class="icol">
-          <h3>Cross-domain overlap<span class="info" title="How often two data types are available in the same country. 'Countries' = the raw number with both; 'Overlap %' = of all countries with either type, the share that have both (the Jaccard score, 0–100%).">i</span>
-            <span class="pillbar" id="matrixMode" style="display:inline-flex;margin-left:8px;vertical-align:middle">
-              <button data-m="count" class="active">Countries</button>
-              <button data-m="jaccard">Overlap %</button>
-            </span>
-          </h3>
-          <div id="matrix"></div>
-        </div>
-        <div class="icol">
-          <h3>Worst data deserts (fewest domains)</h3>
-          <div id="rankDesert"></div>
-        </div>
-        <div class="icol">
-          <h3>Most data-rich countries</h3>
-          <div id="rankRich"></div>
-        </div>
-      </div>
-    </div>
-  </div>
+  </main>
 
   <script src="vendor/leaflet.js"></script>
-  <script src="vendor/leaflet-heat.js"></script>
   <script src="data/world.js"></script>
   <script src="data/datasets.js"></script>
-  <script src="js/config.js"></script>
-  <script src="js/state.js"></script>
-  <script src="js/share-state.js"></script>
-  <script src="js/record-assessment.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
