@@ -4,7 +4,14 @@
   "scripts": {
     "build": "npm run build:data && npm run build:app",
     "build:app": "node scripts/build-app.mjs",
-    "build:data": "python processing/build_data.py"
+    "build:data": "python processing/build_data.py",
+    "build:do-app": "node scripts/build-do-app.mjs",
+    "do-app": "npm run do-app:dev",
+    "do-app:dev": "NODE_ENV=development node --watch --watch-preserve-output do-app/server.mjs",
+    "do-app:prod": "NODE_ENV=production node do-app/server.mjs"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
   },
   "devDependencies": {
     "archiver": "^8.0.0",

@@ -34,6 +34,7 @@ data-deserts/
 │   ├── styles/app.css           Application styling
 │   ├── data/                    Generated JavaScript data bundles
 │   └── vendor/                  Bundled Leaflet assets
+├── do-app/                      WebSocket controller and map-renderer application
 ├── scripts/build-app.mjs        Production asset builder
 ├── dist/                        Ignored production build output
 ├── processing/                  Data acquisition and transformation
@@ -119,6 +120,15 @@ to Vercel, or deploy `dist/` directly; do not deploy the source `app/` directory
 Obfuscation is only a deterrent. Data delivered to a web browser can still be recovered through its
 network and debugging tools. Data that must remain secret requires server-side aggregation or an API
 that returns only the values needed for the current view.
+
+The controller/renderer DO App has a separate standalone production build:
+
+```sh
+npm run build:do-app
+```
+
+It creates `data-deserts-do-app-linux.zip`, which runs on Node.js 20 or newer without installing
+runtime packages. See [do-app/README.md](do-app/README.md) for deployment details.
 
 ## Adding a dataset
 

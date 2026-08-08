@@ -3,6 +3,26 @@
   "use strict";
 
   var datasetOrder = META.datasetOrder;
+  var query = new URLSearchParams(window.location.search);
+  var remoteControl = query.get("remote") === "1";
+  var detailsMode = remoteControl && query.get("details") === "1";
+  var requestedDetailColumns = Number(query.get("columns"));
+  var detailColumnLimit = Number.isInteger(requestedDetailColumns) &&
+    requestedDetailColumns >= 1 && requestedDetailColumns <= 32 ? requestedDetailColumns : 16;
+  var remoteSocket = null;
+  var remoteStateFrame = null, pendingRemoteState = null;
+  var remoteReconnectDelay = 500;
+  var activeCountrySelection = [];
+  var displayScale = 1;
+  function updateDisplayScale() {
+    displayScale = remoteControl
+      ? Math.max(0.75, Math.min(4, Math.min(window.innerWidth / 1920, window.innerHeight / 1080)))
+      : 1;
+    document.documentElement.style.fontSize = (16 * displayScale) + "px";
+  }
+  updateDisplayScale();
+  if (remoteControl) document.body.classList.add("remote-renderer");
+  if (detailsMode) document.body.classList.add("remote-details");
   var scopeDatasets = META.scopeDatasets || [META.scopeDataset];
   var scopeRecords = {};
   scopeDatasets.forEach(function (key) {
@@ -237,7 +257,9 @@
         }).join("");
       }).join("");
     }
-    return '<div class="donut-legend"><svg viewBox="0 0 ' + legendWidth + ' ' + legendHeight + '" role="img" aria-label="Radial coverage sector positions">' +
+    var groupedLegend = series.some(function (item) { return item.keys.length > 1; });
+    return '<div class="donut-legend"><svg class="' + (groupedLegend ? 'grouped-legend' : 'dataset-legend') +
+      '" viewBox="0 0 ' + legendWidth + ' ' + legendHeight + '" role="img" aria-label="Radial coverage sector positions">' +
       '<defs>' + defs + '</defs><g transform="translate(' + donutLeft + ' ' + donutTop + ')">' + sectors +
       '<circle cx="30" cy="30" r="13" class="legend-centre"></circle></g>' + annotations + '</svg></div>';
   }
@@ -278,7 +300,7 @@
           event.target.bringToFront();
         },
         mouseout: function () { countries.setStyle(countryStyle); },
-        click: function () { openDetail(feature); }
+        click: function () { handleCountrySelection(feature); }
       });
     }
   }).addTo(map);
@@ -288,9 +310,11 @@
       return { fillColor: "#0d141d", fillOpacity: 0.58, color: "#1b2734", weight: 0.45 };
     }
     var count = countryCount(feature.id);
+    var selectedCountry = activeCountrySelection.indexOf(feature.id) !== -1;
     return {
       fillColor: count ? "#263443" : "#1b2530", fillOpacity: count ? 0.42 : 0.34,
-      color: count ? "#708296" : "#344250", weight: 0.65
+      color: selectedCountry ? "#5ec5ff" : (count ? "#708296" : "#344250"),
+      weight: selectedCountry ? 2.2 : 0.65
     };
   }
 
@@ -392,7 +416,8 @@
           scoreColor(minMaxScore(count, seriesYearRanges[item.id])) + '" class="bucket"></path>');
       }
     });
-    var fontSize = Math.max(4, Math.min(9, Math.round(size * 0.105)));
+    var fontSize = Math.max(4 * displayScale,
+      Math.min(9 * displayScale, Math.round(size * 0.105)));
     return '<div class="record-donut" style="--size:' + size + 'px;--font:' + fontSize + 'px">' +
       '<svg viewBox="0 0 60 60" aria-hidden="true"><circle cx="30" cy="30" r="28" class="backing"></circle>' +
       paths.join("") + labels.join("") + '<circle cx="30" cy="30" r="13" class="centre"></circle></svg><span>' +
@@ -404,7 +429,7 @@
     var zoom = map.getZoom();
     var size = 30 + (zoom - 2) * 16;
     if (zoom > 4) size += (zoom - 4) * 12;
-    return Math.max(30, Math.min(180, size));
+    return Math.max(30, Math.min(180, size)) * displayScale;
   }
 
   function renderDonuts() {
@@ -420,7 +445,7 @@
       if (!marker) {
         var position = MARKER_POSITIONS[feature.id] || countryLayer.getBounds().getCenter();
         marker = L.marker(position, { icon: icon, riseOnHover: true }).addTo(map);
-        marker.on("click", function () { openDetail(feature); });
+        marker.on("click", function () { handleCountrySelection(feature); });
         marker.bindTooltip(function () { return tooltipHTML(feature); }, {
           className: "ctip leaflet-tooltip-own", direction: "top", opacity: 1
         });
@@ -535,11 +560,134 @@
     renderSummary();
     updateYearControls();
     syncHash();
-    if (document.getElementById("detail").style.display === "block") {
+    if (detailsMode) {
+      renderCountryComparison(activeCountrySelection);
+    } else if (document.getElementById("detail").style.display === "block") {
       var iso = document.getElementById("detail").dataset.iso;
       var feature = WORLD_GEOJSON.features.find(function (item) { return item.id === iso; });
       if (feature) openDetail(feature);
     }
+  }
+
+  function applyRemoteState(next) {
+    if (!next || typeof next !== "object") return;
+    var from = Number(next.yearFrom), to = Number(next.yearTo);
+    if (Number.isInteger(from) && Number.isInteger(to)) {
+      state.yearFrom = Math.max(META.yearMin, Math.min(META.yearMax, from));
+      state.yearTo = Math.max(state.yearFrom, Math.min(META.yearMax, to));
+    }
+    if (Array.isArray(next.selected)) {
+      datasetOrder.forEach(function (key) { state.selected[key] = next.selected.indexOf(key) !== -1; });
+    }
+    if (typeof next.yearlyHistograms === "boolean") state.yearlyHistograms = next.yearlyHistograms;
+    if (typeof next.groupedDonuts === "boolean") state.groupedDonuts = next.groupedDonuts;
+    var previousCountries = activeCountrySelection.join(",");
+    if (Array.isArray(next.countries)) {
+      activeCountrySelection = next.countries.filter(function (iso, index, values) {
+        return typeof iso === "string" && values.indexOf(iso) === index &&
+          WORLD_GEOJSON.features.some(function (feature) { return feature.id === iso; });
+      });
+    }
+    redraw();
+    if (!detailsMode && activeCountrySelection.length &&
+        previousCountries !== activeCountrySelection.join(",")) focusCountries(activeCountrySelection);
+  }
+
+  function focusCountries(selection) {
+    var bounds = null;
+    countryEntries.forEach(function (entry) {
+      if (selection.indexOf(entry.feature.id) === -1) return;
+      if (!bounds) bounds = L.latLngBounds(entry.layer.getBounds());
+      else bounds.extend(entry.layer.getBounds());
+    });
+    if (bounds && bounds.isValid()) {
+      map.fitBounds(bounds, {
+        maxZoom: selection.length === 1 ? 5 : 6,
+        padding: [20 * displayScale, 20 * displayScale], animate: false
+      });
+    }
+  }
+
+  function queueRemoteState(next) {
+    pendingRemoteState = next;
+    if (remoteStateFrame !== null) return;
+    remoteStateFrame = window.requestAnimationFrame(function () {
+      remoteStateFrame = null;
+      var latest = pendingRemoteState; pendingRemoteState = null;
+      applyRemoteState(latest);
+    });
+  }
+
+  function applyRemoteNavigation(message) {
+    if (message.action === "zoomIn") { map.zoomIn(1, { animate: false }); return; }
+    if (message.action === "zoomOut") { map.zoomOut(1, { animate: false }); return; }
+    if (message.action === "pan") {
+      var offsets = { north: [0, -160], south: [0, 160], west: [-200, 0], east: [200, 0] };
+      if (offsets[message.value]) map.panBy(offsets[message.value], { animate: false });
+      return;
+    }
+    if (message.action === "region") {
+      var region = regions.find(function (item) { return item.name === message.value; });
+      if (region) {
+        if (region.name === "World") map.setView([25, 15], 4, { animate: false });
+        else map.fitBounds(region.bounds, { animate: false });
+      }
+      return;
+    }
+    if (message.action === "country" && typeof message.value === "string") {
+      var feature = WORLD_GEOJSON.features.find(function (item) { return item.id === message.value; });
+      var entry = feature && countryEntries.find(function (item) { return item.feature === feature; });
+      if (entry && !detailsMode) {
+        map.fitBounds(entry.layer.getBounds(), { maxZoom: 5, animate: false });
+      }
+      if (feature && detailsMode) openDetail(feature);
+    }
+  }
+
+  function connectRemoteController() {
+    var explicitUrl = query.get("ws");
+    var url = explicitUrl || ((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws");
+    var socket;
+    try { socket = new WebSocket(url); remoteSocket = socket; } catch (error) {
+      setRemoteConnection("error", "Connection failed — retrying");
+      window.setTimeout(connectRemoteController, remoteReconnectDelay); return;
+    }
+    setRemoteConnection("", "Connecting…");
+    socket.onopen = function () {
+      setRemoteConnection("connected", "Connected · waiting for controller");
+      socket.send(JSON.stringify({ type: "hello", role: detailsMode ? "details" : "renderer" }));
+      sendRemoteView();
+    };
+    socket.onmessage = function (event) {
+      try {
+        var message = JSON.parse(event.data);
+        if (message.type === "reload") { location.reload(); return; }
+        if (message.type === "state") queueRemoteState(message.state);
+        if (message.type === "navigation") applyRemoteNavigation(message);
+        if (message.type === "peers") setRemoteConnection("connected",
+          message.controllers ? "Connected · controller online" : "Connected · waiting for controller");
+      } catch (error) { /* Ignore malformed relay messages. */ }
+    };
+    socket.onerror = function () { setRemoteConnection("error", "Connection interrupted"); };
+    socket.onclose = function () {
+      setRemoteConnection("error", "Disconnected · retrying");
+      window.setTimeout(connectRemoteController, remoteReconnectDelay);
+    };
+  }
+
+  function setRemoteConnection(kind, message) {
+    var element = document.getElementById("remoteConnection");
+    if (!element) return;
+    element.className = "remote-connection " + kind;
+    element.querySelector("span").textContent = message;
+  }
+
+  function sendRemoteView() {
+    if (!remoteControl || detailsMode || !remoteSocket || remoteSocket.readyState !== WebSocket.OPEN) return;
+    var centre = map.getCenter();
+    remoteSocket.send(JSON.stringify({
+      type: "view", zoom: map.getZoom(), lat: centre.lat, lng: centre.lng
+    }));
   }
 
   function renderFilters() {
@@ -674,29 +822,30 @@
       setHandleYear(handle, next);
     });
   }
-  bindHandle(yearFrom); bindHandle(yearTo);
-  yearRangeControl.addEventListener("pointerdown", function (event) {
-    if (event.target === yearFrom || event.target === yearTo) return;
-    var year = yearAtPointer(event.clientX);
-    var handle = Math.abs(year - state.yearFrom) <= Math.abs(year - state.yearTo) ? yearFrom : yearTo;
-    handle.focus();
-    setHandleYear(handle, year);
-  });
-  yearlyBucketsToggle.onclick = function () {
-    state.yearlyHistograms = !state.yearlyHistograms;
-    redraw();
-  };
-  groupingToggle.onclick = function () {
-    state.groupedDonuts = !state.groupedDonuts;
-    redraw();
-  };
-
-  document.getElementById("selectAll").onclick = function () {
-    datasetOrder.forEach(function (key) { state.selected[key] = true; }); redraw();
-  };
-  document.getElementById("selectNone").onclick = function () {
-    datasetOrder.forEach(function (key) { state.selected[key] = false; }); redraw();
-  };
+  if (!remoteControl) {
+    bindHandle(yearFrom); bindHandle(yearTo);
+    yearRangeControl.addEventListener("pointerdown", function (event) {
+      if (event.target === yearFrom || event.target === yearTo) return;
+      var year = yearAtPointer(event.clientX);
+      var handle = Math.abs(year - state.yearFrom) <= Math.abs(year - state.yearTo) ? yearFrom : yearTo;
+      handle.focus();
+      setHandleYear(handle, year);
+    });
+    yearlyBucketsToggle.onclick = function () {
+      state.yearlyHistograms = !state.yearlyHistograms;
+      redraw();
+    };
+    groupingToggle.onclick = function () {
+      state.groupedDonuts = !state.groupedDonuts;
+      redraw();
+    };
+    document.getElementById("selectAll").onclick = function () {
+      datasetOrder.forEach(function (key) { state.selected[key] = true; }); redraw();
+    };
+    document.getElementById("selectNone").onclick = function () {
+      datasetOrder.forEach(function (key) { state.selected[key] = false; }); redraw();
+    };
+  }
 
   function yearStrip(key, iso) {
     var dataset = DATASETS[key];
@@ -744,8 +893,21 @@
     return '<section class="category-detail"><h3><span class="category-swatches">' + swatches + '</span>' +
       escapeHTML(series.label) + '</h3><p>' + formatNumber(seriesCount(series, iso)) +
       ' records in this window</p>' + seriesYearStrip(series, iso) +
-      '<details class="dataset-breakdown"><summary>Show dataset details</summary>' +
+      '<details class="dataset-breakdown"' + (remoteControl ? ' open' : '') +
+      '><summary>Show dataset details</summary>' +
       keys.map(function (key) { return datasetDetailHTML(key, iso, true); }).join("") + '</details></section>';
+  }
+
+  function countryDetailHTML(iso) {
+    var keys = selectedKeys();
+    return !countryInScope(iso)
+      ? '<div class="empty">Records are shown only for countries with DHS participant data.</div>'
+      : keys.length ? (state.groupedDonuts
+        ? displaySeries().filter(function (series) { return series.selected; }).map(function (series) {
+          return categoryDetailHTML(series, iso);
+        }).join("")
+        : keys.map(function (key) { return datasetDetailHTML(key, iso, false); }).join(""))
+      : '<div class="empty">Select at least one dataset to see its records.</div>';
   }
 
   function openDetail(feature) {
@@ -755,16 +917,42 @@
     document.getElementById("detailMeta").textContent = countryInScope(iso)
       ? formatNumber(countryCount(iso)) + " selected records"
       : "Outside DHS participant-data scope";
-    var keys = selectedKeys();
-    document.getElementById("detailBody").innerHTML = !countryInScope(iso)
-      ? '<div class="empty">Records are shown only for countries with DHS participant data.</div>'
-      : keys.length ? (state.groupedDonuts
-        ? displaySeries().filter(function (series) { return series.selected; }).map(function (series) {
-          return categoryDetailHTML(series, iso);
-        }).join("")
-        : keys.map(function (key) { return datasetDetailHTML(key, iso, false); }).join(""))
-      : '<div class="empty">Select at least one dataset to see its records.</div>';
+    document.getElementById("detailBody").innerHTML = countryDetailHTML(iso);
     panel.style.display = "block";
+  }
+
+  function renderCountryComparison(selection) {
+    var panel = document.getElementById("detail");
+    panel.style.display = "block";
+    delete panel.dataset.iso;
+    var features = selection.map(function (iso) {
+      return WORLD_GEOJSON.features.find(function (feature) { return feature.id === iso; });
+    }).filter(Boolean).sort(function (first, second) {
+      return first.properties.name.localeCompare(second.properties.name);
+    });
+    document.getElementById("detailName").textContent = features.length > 1
+      ? "Country comparison" : features.length ? features[0].properties.name : "Country details";
+    document.getElementById("detailMeta").textContent = features.length
+      ? features.length + " selected countr" + (features.length === 1 ? "y" : "ies") +
+        " · " + state.yearFrom + "–" + state.yearTo
+      : "Waiting for a country selection";
+    document.getElementById("detailBody").innerHTML = features.length
+      ? '<div class="country-comparison" style="--max-country-columns:' + detailColumnLimit + '">' +
+        features.map(function (feature) {
+          return '<section class="country-column"><h2>' + escapeHTML(feature.properties.name) +
+            '</h2><div class="country-column-meta">' + formatNumber(countryCount(feature.id)) +
+            ' selected records</div>' + countryDetailHTML(feature.id) + '</section>';
+        }).join("") + '</div>'
+      : '<div class="empty">Select countries from the controller or click them on the map.</div>';
+  }
+  function handleCountrySelection(feature) {
+    if (remoteControl && !detailsMode) {
+      if (remoteSocket && remoteSocket.readyState === WebSocket.OPEN) {
+        remoteSocket.send(JSON.stringify({ type: "selection", country: feature.id }));
+      }
+      return;
+    }
+    openDetail(feature);
   }
   document.getElementById("detailClose").onclick = function () { document.getElementById("detail").style.display = "none"; };
 
@@ -835,6 +1023,25 @@
     if (event.key === "Escape") setLicences(false);
   });
 
-  loadHash();
+  if (!remoteControl) loadHash();
   redraw();
+  if (remoteControl) {
+    var resizeFrame = null;
+    window.addEventListener("resize", function () {
+      if (resizeFrame !== null) return;
+      resizeFrame = window.requestAnimationFrame(function () {
+        resizeFrame = null; updateDisplayScale(); map.invalidateSize(); redraw();
+      });
+    });
+    if (!detailsMode) map.on("zoomend moveend", sendRemoteView);
+    if (detailsMode) {
+      var detailPanel = document.getElementById("detail");
+      detailPanel.style.display = "block";
+      document.getElementById("detailName").textContent = "Country details";
+      document.getElementById("detailMeta").textContent = "Waiting for a country selection";
+      document.getElementById("detailBody").innerHTML =
+        '<div class="empty">Choose a country from the controller or click one on the map.</div>';
+    }
+    connectRemoteController();
+  }
 })();

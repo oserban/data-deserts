@@ -155,8 +155,9 @@ python3 processing/fetch_mics.py
 GBIF counts are neither species richness nor individual abundance. GBIF has no universal query flag
 proving every record represents a wild organism. Excluding living specimens removes explicitly
 identified zoo, aquarium, cultivated, and living-collection records, but cannot repair missing
-publisher context. See [processing/GBIF_CLEANING.md](processing/GBIF_CLEANING.md) for the exact basis
-types, geospatial rules, facet validation, and limitations.
+publisher context. See the
+[processing README](processing/README.md#build-yearly-cleaned-gbif-occurrence-counts) for the exact
+basis types, geospatial rules, facet validation, and limitations.
 
 ```sh
 python3 -m pip install -r processing/requirements.txt

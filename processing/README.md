@@ -151,19 +151,48 @@ the app's LMIC-focused country scope.
 
 ## Build yearly cleaned GBIF occurrence counts
 
-Install the processing requirements, then query cleaned animal occurrences grouped by country and
-year:
+Query cleaned GBIF occurrences grouped by interpreted occurrence country and year:
 
 ```sh
-python3 -m pip install -r processing/requirements.txt
 python3 processing/fetch_gbif.py
+
+# Animals and plants, restricted to selected countries
+python3 processing/fetch_gbif.py --include-plants --country KE --country GH
 ```
 
-This writes `processing/data/gbif.json` in the shared `{ISO3: {year: count}}` format and an audit
-report at `processing/data/gbif_report.json`. Records without coordinates, with GBIF geospatial
-issues, explicit absences, fossils, and living specimens are excluded. Animalia is the default;
-pass `--include-plants` to add Plantae. See `GBIF_CLEANING.md` for the exact rules and limitations of
-inferring wild status from GBIF metadata. `build_data.py` includes GBIF in the Ecology category.
+The default scope is Animalia from 1900 through the current year. Pass `--include-plants` to add
+Plantae, `--year-min` and `--year-max` to change the date range, or repeat `--country ISO2` to run a
+smaller country subset; without `--country`, the script queries every country in GBIF's official
+country enumeration. Each retained record must:
+
+- have interpreted coordinates and no GBIF geospatial issue;
+- have occurrence status `PRESENT`;
+- use a field-evidence or material basis of record: human observation, machine observation,
+  observation, preserved specimen, material sample, or generic occurrence; and
+- fall within the selected year range.
+
+This excludes explicit absences, undated or out-of-range occurrences, fossils, and
+`LIVING_SPECIMEN` records such as explicitly identified zoo, aquarium, living-collection, or
+cultivated specimens. GBIF's interpreted geospatial flag covers core problems such as zero,
+invalid, out-of-range, and country-coordinate mismatches; it is not equivalent to applying a
+record-level tool such as CoordinateCleaner.
+
+The script queries GBIF year facets rather than downloading occurrence rows, once per country and
+kingdom. It verifies that each facet sum equals GBIF's filtered total and fails rather than accepting
+a truncated response. Kingdom keys are resolved against the current GBIF backbone, and GBIF's
+official country enumeration supplies the ISO2-to-ISO3 mapping.
+
+The outputs are:
+
+- `processing/data/gbif.json`: counts in the shared `{ISO3: {year: count}}` format;
+- `processing/data/gbif_report.json`: generation time, resolved kingdom keys, exact filters, the
+  known wild-status limitation, and per-country totals split by kingdom.
+
+These are occurrence-record counts, not counts of distinct species or individual organisms. GBIF
+has no universal flag proving that every observation or preserved specimen came from a wild
+organism. Excluding `LIVING_SPECIMEN` reduces explicitly captive or cultivated records, but a
+publisher may omit that context; stronger verification requires a GBIF download and record-level
+review. `build_data.py` includes GBIF in the Ecology category.
 
 ## Build yearly LSMS participant-record counts
 

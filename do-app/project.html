@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Data Deserts — about the project</title>
+  <link rel="stylesheet" href="/do-app/project.css" />
+</head>
+<body>
+  <main>
+    <header>
+      <span class="eyebrow">Data Deserts</span>
+      <h1>Where evidence is missing, decisions become harder.</h1>
+      <p>Data Deserts reveals the uneven geographic and temporal coverage of ecological, agricultural,
+        and public-health data—and asks how transparent, responsible AI might help researchers identify
+        gaps without disguising uncertainty as knowledge.</p>
+    </header>
+
+    <section class="concept" aria-labelledby="concept-title">
+      <div class="concept-copy">
+        <span class="section-label">The central idea</span>
+        <h2 id="concept-title">From scattered observations to visible gaps</h2>
+        <p>Living systems connect biodiversity, food production, water, climate and human health.
+          The animation shows how gaps in one domain limit our understanding of the whole system.</p>
+        <div class="domain-key"><span class="ecology-dot">Ecology</span><span class="agriculture-dot">Agriculture</span><span class="hydrology-dot">Hydrology</span><span class="health-dot">Public health</span></div>
+        <div class="key"><span><i class="observed"></i>Observed records</span><span><i class="gap"></i>Data desert</span><span><i class="inferred"></i>AI-supported estimate</span></div>
+      </div>
+      <div class="data-landscape">
+        <svg id="desertAnimation" viewBox="0 0 1200 600" role="img" aria-labelledby="animationTitle animationDescription">
+          <title id="animationTitle">Animated Data Deserts concept</title>
+          <desc id="animationDescription">Ecology, agriculture, hydrology and public-health observations form a connected sustainability system around a central data desert. AI identifies relationships and prioritises new measurement while uncertainty remains visible.</desc>
+          <defs>
+            <radialGradient id="voidGradient"><stop offset="0" stop-color="#070b10" stop-opacity=".94"/><stop offset=".72" stop-color="#0b1118" stop-opacity=".55"/><stop offset="1" stop-color="#0b1118" stop-opacity="0"/></radialGradient>
+            <filter id="glow"><feGaussianBlur stdDeviation="5" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+          </defs>
+          <g class="world-map" aria-hidden="true">
+            <path d="M116 175 150 123l76-31 89 14 52 41-20 39-62 9-30 38-51-8-30-35-42 8Z"/>
+            <path d="m310 246 54 14 39 47-5 72-35 102-31-19-20-80-30-60Z"/>
+            <path d="m487 136 40-28 58 8 24 29-24 30-52-8-31 17-34-19Z"/>
+            <path d="m525 201 74-18 65 35 13 69-42 96-49-13-29-72-51-53Z"/>
+            <path d="m620 135 87-46 150 20 73 42 104 5 55 42-30 39-91-7-51 36-76-17-61 24-82-37-47-38Z"/>
+            <path d="m886 344 68-25 77 25 23 56-62 40-85-16-38-42Z"/>
+            <path d="m1080 278 22-8 14 18-19 18Z"/>
+          </g>
+          <g class="map-grid" aria-hidden="true"><path d="M90 285h1020M300 80v410M600 80v410M900 80v410"/></g>
+          <g class="desert-zones" aria-hidden="true">
+            <ellipse class="data-void desert-one" cx="350" cy="340" rx="38" ry="54" fill="url(#voidGradient)"/>
+            <ellipse class="data-void desert-two" cx="605" cy="285" rx="50" ry="62" fill="url(#voidGradient)"/>
+            <ellipse class="data-void desert-three" cx="790" cy="180" rx="70" ry="42" fill="url(#voidGradient)"/>
+          </g>
+          <g id="networkLines" class="network-lines"></g>
+          <g id="observations" class="observations"></g>
+          <g id="inferredRecords" class="inferred-records"></g>
+        </svg>
+      </div>
+    </section>
+
+    <div class="project-grid">
+      <article class="project-card"><span class="card-number">01</span><h2>What the project does</h2><p>Data Deserts combines eight sources into a single map of country-year coverage. Radial charts make overlap—and its absence—visible across ecology, agriculture, and public health.</p></article>
+      <article class="project-card"><span class="card-number">02</span><h2>Why gaps matter</h2><p>Evidence is not collected evenly. Sparse or disconnected records can hide change, weaken comparisons, and leave communities under-represented in research and policy.</p></article>
+      <article class="project-card"><span class="card-number">03</span><h2>Where AI may help</h2><p>AI can detect coverage patterns, identify high-value places and years for new collection, connect compatible sources, and generate testable estimates with explicit uncertainty.</p></article>
+      <article class="project-card caution"><span class="card-number">04</span><h2>What AI cannot do</h2><p>Predictions are not observations. Responsible use must preserve provenance, expose bias and uncertainty, protect sensitive data, and direct investment toward collecting missing evidence.</p></article>
+    </div>
+
+    <section class="partners">
+      <div class="section-heading"><h2>Partner universities</h2></div>
+      <div class="partner-grid">
+        <a class="partner-card imperial-partner" href="https://www.imperial.ac.uk/" target="_blank" rel="noopener"><img src="/do-app/assets/project/imperial-college-london.png" alt="Imperial College London" /></a>
+        <a class="partner-card polimi-partner" href="https://www.polimi.it/" target="_blank" rel="noopener"><span class="logo-surface"><img src="/do-app/assets/project/politecnico-di-milano.svg" alt="Politecnico di Milano" /></span></a>
+      </div>
+      <p class="programme">The collaboration grew out of the <a href="https://www.imperial.ac.uk/news/259556/call-early-career-researchers-develop-healthy/" target="_blank" rel="noopener">European Talent Academy 2025</a>, bringing researchers across institutions and disciplines together around healthy, sustainable and resilient futures.</p>
+    </section>
+
+    <section class="people">
+      <div class="section-heading"><h2>Project team</h2></div>
+      <div class="people-grid">
+        <a href="https://re.public.polimi.it/cris/rp/rp50671" target="_blank" rel="noopener"><img src="/do-app/assets/project/nikolas-galli.jpg" alt="Portrait of Nikolas Galli" /><span class="person-copy"><b>Nikolas Galli</b><span>Politecnico di Milano</span></span></a>
+        <a href="https://profiles.imperial.ac.uk/paraskevi.seferidi14" target="_blank" rel="noopener"><img src="/do-app/assets/project/paraskevi-seferidi.jpg" alt="Portrait of Paraskevi Seferidi" /><span class="person-copy"><b>Paraskevi Seferidi</b><span>Imperial College London</span></span></a>
+        <a href="https://www.imperial.ac.uk/people/o.serban" target="_blank" rel="noopener"><img src="/do-app/assets/project/ovidiu-serban.jpg" alt="Portrait of Ovidiu Șerban" /><span class="person-copy"><b>Ovidiu Șerban</b><span>Imperial College London</span></span></a>
+        <a href="https://profiles.imperial.ac.uk/jessica.williams15" target="_blank" rel="noopener"><img src="/do-app/assets/project/jessica-williams.jpg" alt="Portrait of Jessica Williams" /><span class="person-copy"><b>Jessica Williams</b><span>Imperial College London</span></span></a>
+      </div>
+      <p class="credit">Visualisation initially developed by <a href="https://www.linkedin.com/in/rose-cymbler/" target="_blank" rel="noopener">Rose Cymbler</a>, Data Visualisation Intern, and subsequently expanded by <a href="https://www.imperial.ac.uk/people/o.serban" target="_blank" rel="noopener">Ovidiu Șerban</a>.</p>
+    </section>
+  </main>
+  <script src="/do-app/project.js"></script>
+</body>
+</html>
