@@ -95,11 +95,22 @@
       <div id="regions" class="pillbar"></div>
       <input id="search" list="countryList" placeholder="Search a country…" autocomplete="off" />
       <datalist id="countryList"></datalist>
-      <button id="shareButton">Share view</button>
-      <button id="licencesButton">Data &amp; licences</button>
-      <button id="helpButton">Help</button>
-      <a class="toolbar-button" href="https://github.com/oserban/data-deserts/issues/new"
-        target="_blank" rel="noopener noreferrer">Report an issue</a>
+      <div class="toolbar-actions" aria-label="Application actions">
+        <button type="button" id="shareButton" class="toolbar-action" aria-label="Share view" data-tooltip="Share view">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="18" cy="5" r="2.5"></circle><circle cx="6" cy="12" r="2.5"></circle><circle cx="18" cy="19" r="2.5"></circle><path d="m8.2 10.8 7.6-4.5M8.2 13.2l7.6 4.5"></path></svg>
+        </button>
+        <button type="button" id="licencesButton" class="toolbar-action" aria-label="Data and licences" data-tooltip="Data &amp; licences">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3.5h8l4 4V20.5H6z"></path><path d="M14 3.5v4h4M9 12h6M9 16h6"></path></svg>
+        </button>
+        <button type="button" id="helpButton" class="toolbar-action" aria-label="Help" data-tooltip="Help">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M9.7 9a2.4 2.4 0 1 1 3.5 2.1c-.8.4-1.2.9-1.2 1.9M12 17h.01"></path></svg>
+        </button>
+        <a class="toolbar-action" href="https://github.com/oserban/data-deserts/issues/new/choose"
+          target="_blank" rel="noopener noreferrer" aria-label="Report an issue in a new window"
+          data-tooltip="Report an issue">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8v5M12 17h.01"></path><circle cx="12" cy="12" r="9"></circle><path d="M15.5 5.5 19 2m-2 0h2v2"></path></svg>
+        </a>
+      </div>
     </div>
     <div id="mapCaption"></div>
     <div id="toast"></div>

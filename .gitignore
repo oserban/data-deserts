@@ -3,6 +3,8 @@ node_modules/
 dist/
 dist-do-app/
 *.log
+.env
+.env.local
 __pycache__/
 ~$*.xlsx
 venv/
