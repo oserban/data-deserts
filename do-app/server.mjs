@@ -4,6 +4,7 @@ import { createServer } from "node:http";
 import { extname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer, WebSocket } from "ws";
+import QRCode from "qrcode";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const port = Number(process.env.PORT || 8080);
@@ -13,9 +14,11 @@ const types = {
   ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".svg": "image/svg+xml"
 };
 let latestState = null;
+let latestCountries = null;
 const pageRoutes = {
   "/": "/do-app/controller.html",
   "/controller": "/do-app/controller.html",
+  "/mini-controller": "/do-app/mini-controller.html",
   "/renderer": "/do-app/renderer.html",
   "/details": "/do-app/details.html",
   "/datasets": "/do-app/datasets.html",
@@ -23,7 +26,25 @@ const pageRoutes = {
   "/about": "/do-app/project.html"
 };
 const server = createServer(async (request, response) => {
-  const pathname = new URL(request.url, "http://localhost").pathname;
+  const requestUrl = new URL(request.url, "http://localhost");
+  const pathname = requestUrl.pathname;
+  if (pathname === "/qr") {
+    const text = requestUrl.searchParams.get("text") || "";
+    if (!text || text.length > 2048) {
+      response.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" }).end("Invalid QR text");
+      return;
+    }
+    try {
+      const svg = await QRCode.toString(text, {
+        type: "svg", errorCorrectionLevel: "M", margin: 2,
+        color: { dark: "#0f1620", light: "#ffffff" }
+      });
+      response.writeHead(200, { "Content-Type": "image/svg+xml; charset=utf-8", "Cache-Control": "no-store" }).end(svg);
+    } catch (error) {
+      response.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" }).end("QR generation failed");
+    }
+    return;
+  }
   const route = pageRoutes[pathname] || pathname;
   if (!route.startsWith("/app/") && !route.startsWith("/do-app/")) {
     response.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" }).end("Not found");
@@ -45,13 +66,14 @@ const server = createServer(async (request, response) => {
 const relay = new WebSocketServer({ server, path: "/ws", maxPayload: 64 * 1024 });
 
 function peerCounts() {
-  let controllers = 0, renderers = 0, details = 0;
+  let controllers = 0, miniControllers = 0, renderers = 0, details = 0;
   relay.clients.forEach((client) => {
     if (client.role === "controller") controllers++;
+    if (client.role === "mini-controller") miniControllers++;
     if (client.role === "renderer") renderers++;
     if (client.role === "details") details++;
   });
-  return { type: "peers", controllers, renderers, details };
+  return { type: "peers", controllers, miniControllers, renderers, details };
 }
 
 function broadcast(message, role) {
@@ -79,15 +101,31 @@ relay.on("connection", (socket) => {
   socket.on("message", (data) => {
     let message;
     try { message = JSON.parse(data.toString()); } catch (error) { return; }
-    if (message.type === "hello" && ["controller", "renderer", "details"].includes(message.role)) {
+    if (message.type === "hello" && ["controller", "mini-controller", "renderer", "details"].includes(message.role)) {
       socket.role = message.role;
-      if (["renderer", "details"].includes(socket.role) && latestState) socket.send(JSON.stringify(latestState));
+      if (["mini-controller", "renderer", "details"].includes(socket.role) && latestState) socket.send(JSON.stringify(latestState));
       broadcast(peerCounts());
       return;
     }
     if (message.type === "state" && socket.role === "controller" && message.state) {
-      latestState = { type: "state", state: message.state };
-      broadcast(latestState, ["renderer", "details"]);
+      const state = { ...message.state };
+      if (latestCountries) state.countries = latestCountries.slice();
+      else if (Array.isArray(state.countries)) latestCountries = state.countries.slice();
+      latestState = { type: "state", state };
+      broadcast(latestState, ["mini-controller", "renderer", "details"]);
+      if (latestCountries) socket.send(JSON.stringify({ type: "countries", countries: latestCountries }));
+      return;
+    }
+    if (message.type === "countries" && socket.role === "mini-controller" && Array.isArray(message.countries)) {
+      const countries = message.countries.filter((country, index, values) =>
+        typeof country === "string" && /^[A-Z]{3}$/.test(country) && values.indexOf(country) === index
+      ).slice(0, 32);
+      latestCountries = countries;
+      if (latestState) {
+        latestState = { type: "state", state: { ...latestState.state, countries } };
+        broadcast(latestState, ["mini-controller", "renderer", "details"]);
+      }
+      broadcast({ type: "countries", countries }, "controller");
       return;
     }
     if (message.type === "navigation" && socket.role === "controller" &&
@@ -110,6 +148,7 @@ relay.on("connection", (socket) => {
 
 server.listen(port, () => {
   console.log(`Controller: http://localhost:${port}/controller`);
+  console.log(`Mobile:     http://localhost:${port}/mini-controller`);
   console.log(`Renderer:   http://localhost:${port}/renderer`);
   console.log(`Details:    http://localhost:${port}/details`);
   console.log(`Datasets:   http://localhost:${port}/datasets`);

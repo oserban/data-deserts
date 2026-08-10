@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Data Deserts — select countries</title>
+  <link rel="stylesheet" href="/do-app/mini-controller.css" />
+</head>
+<body>
+  <main>
+    <header>
+      <span class="eyebrow">Data Deserts</span>
+      <h1>Select countries</h1>
+      <p>Choose the countries to show on the information panel. Changes appear immediately.</p>
+      <div id="connection" class="status" aria-live="polite"><i></i><span>Connecting…</span></div>
+    </header>
+    <section>
+      <label for="countrySearch">Find a country</label>
+      <input id="countrySearch" type="search" placeholder="Search by country name…" autocomplete="off" />
+      <div class="selection-heading"><b>Selected</b><button id="clearCountries" type="button">Clear all</button></div>
+      <div id="selectedCountries" class="selected-countries"><small>No countries selected</small></div>
+    </section>
+    <section>
+      <h2>Available countries</h2>
+      <div id="countryList" class="country-list"></div>
+    </section>
+  </main>
+  <script src="/app/data/datasets.js"></script>
+  <script src="/app/data/world.js"></script>
+  <script src="/do-app/mini-controller.js"></script>
+</body>
+</html>

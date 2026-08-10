@@ -18,6 +18,13 @@ Open the controller at `http://localhost:8080/controller` and the renderer at
 `http://localhost:8080/details`. Open any page on multiple devices by replacing
 `localhost` with the server's reachable hostname or IP address.
 
+The controller displays a QR code for `/mini-controller`. Visitors can scan it on a phone and
+select only the countries shown by the detached information panel; other map and dataset controls
+remain available only on the main controller. The QR code uses the current origin, so open the
+controller through a hostname or LAN address reachable by visitors. If it must advertise a
+different public address, use `/controller?publicUrl=https://host`.
+The renderer displays the same invitation and accepts the same `publicUrl` override.
+
 The static dataset reference is available at `http://localhost:8080/datasets`. Its
 typography and two-column layout scale for the target 3820 × 4320 portrait display and collapse to
 one column on small laptop windows.

@@ -11,6 +11,7 @@
     "do-app:prod": "NODE_ENV=production node do-app/server.mjs"
   },
   "dependencies": {
+    "qrcode": "^1.5.4",
     "ws": "^8.18.0"
   },
   "devDependencies": {

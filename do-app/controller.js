@@ -26,6 +26,14 @@
   };
   var socket, reconnectTimer;
   var reconnectDelay = 500;
+  var mobileUrl = new URL("/mini-controller", location.origin);
+  var publicUrl = new URLSearchParams(location.search).get("publicUrl");
+  if (publicUrl) {
+    try { mobileUrl = new URL("/mini-controller", new URL(publicUrl)); } catch (error) { /* Use current origin. */ }
+  }
+  var mobileLink = document.getElementById("mobileControllerLink");
+  mobileLink.href = mobileUrl.href; mobileLink.textContent = mobileUrl.href;
+  document.getElementById("mobileControllerQr").src = "/qr?text=" + encodeURIComponent(mobileUrl.href);
 
   function sendState() {
     if (socket && socket.readyState === WebSocket.OPEN) {
@@ -88,6 +96,9 @@
         }
         if (message.type === "selection" && typeof message.country === "string") {
           toggleCountry(message.country);
+        }
+        if (message.type === "countries" && Array.isArray(message.countries)) {
+          state.countries = message.countries.slice(); updateCountrySelectionUI();
         }
       } catch (error) { /* Ignore malformed relay messages. */ }
     };

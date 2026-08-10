@@ -70,6 +70,27 @@ controllerHtml = controllerHtml
   .replace(/\n  <script src="\/app\/data\/datasets\.js"><\/script>\n  <script src="\/app\/data\/world\.js"><\/script>\n  <script src="\/do-app\/controller\.js"><\/script>/,
     '\n  <script src="/do-app/assets/controller.min.js"></script>');
 await writeFile(resolve(output, "do-app/controller.html"), controllerHtml);
+
+const [miniControllerLogic, miniControllerCss] = await Promise.all([
+  readFile(resolve(doApp, "mini-controller.js"), "utf8"),
+  readFile(resolve(doApp, "mini-controller.css"), "utf8")
+]);
+const miniControllerBundle = await transform([datasets, world, miniControllerLogic].join("\n;\n"), {
+  legalComments: "none", minify: true, sourcefile: "mini-controller.bundle.js",
+  sourcemap: false, target: ["es2018"]
+});
+await writeFile(resolve(output, "do-app/assets/mini-controller.min.js"), miniControllerBundle.code);
+const miniControllerStyles = await transform(miniControllerCss, {
+  legalComments: "none", loader: "css", minify: true, sourcemap: false,
+  sourcefile: "mini-controller.css", target: ["es2018"]
+});
+await writeFile(resolve(output, "do-app/assets/mini-controller.min.css"), miniControllerStyles.code);
+let miniControllerHtml = await readFile(resolve(doApp, "mini-controller.html"), "utf8");
+miniControllerHtml = miniControllerHtml
+  .replace('href="/do-app/mini-controller.css"', 'href="/do-app/assets/mini-controller.min.css"')
+  .replace(/\n  <script src="\/app\/data\/datasets\.js"><\/script>\n  <script src="\/app\/data\/world\.js"><\/script>\n  <script src="\/do-app\/mini-controller\.js"><\/script>/,
+    '\n  <script src="/do-app/assets/mini-controller.min.js"></script>');
+await writeFile(resolve(output, "do-app/mini-controller.html"), miniControllerHtml);
 await cp(resolve(doApp, "renderer.html"), resolve(output, "do-app/renderer.html"));
 await cp(resolve(doApp, "details.html"), resolve(output, "do-app/details.html"));
 
@@ -138,7 +159,8 @@ Requires Node.js 20 or newer. No package installation is required.
 PORT=8080 node do-app/server.mjs
 \`\`\`
 
-Alternatively run \`npm start\`. Open \`/controller\` for the controller, \`/renderer\` for the map,
+Alternatively run \`npm start\`. Open \`/controller\` for the controller, \`/mini-controller\` for
+the mobile country selector, \`/renderer\` for the map,
 and \`/details\` for the detached country-information panel. The static dataset reference is
 available at \`/datasets\`, and the project overview is available at \`/project\`.
 
