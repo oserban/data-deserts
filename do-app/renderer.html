@@ -13,7 +13,7 @@
   </style>
 </head>
 <body>
-  <iframe src="../app/index.html?remote=1" title="Data Deserts map renderer"></iframe>
+  <iframe id="rendererFrame" title="Data Deserts map renderer"></iframe>
   <aside class="mobile-invite" aria-label="Mobile country controller">
     <img id="mobileControllerQr" alt="QR code for the mobile country controller" />
     <div><b>Select countries</b><span>Scan with your phone to choose countries for the information panel.</span></div>
@@ -22,13 +22,21 @@
     (function () {
       "use strict";
       var params = new URLSearchParams(location.search);
-      var baseUrl = location.origin;
+      var applicationBase = new URL(".", location.href);
+      var publicBase = applicationBase;
       if (params.get("publicUrl")) {
-        try { baseUrl = new URL(params.get("publicUrl")).origin; } catch (error) { /* Use current origin. */ }
+        try {
+          publicBase = new URL(params.get("publicUrl"));
+          if (!publicBase.pathname.endsWith("/")) publicBase.pathname += "/";
+        } catch (error) { /* Use current origin. */ }
       }
-      var mobileUrl = new URL("/mini-controller", baseUrl);
+      var mobileUrl = new URL("mini-controller", publicBase);
       if (params.get("ws")) mobileUrl.searchParams.set("ws", params.get("ws"));
-      document.getElementById("mobileControllerQr").src = "/qr?text=" + encodeURIComponent(mobileUrl.href);
+      document.getElementById("mobileControllerQr").src =
+        new URL("qr?text=" + encodeURIComponent(mobileUrl.href), applicationBase).href;
+      var inner = new URLSearchParams({ remote: "1" });
+      if (params.get("ws")) inner.set("ws", params.get("ws"));
+      document.getElementById("rendererFrame").src = "app/index.html?" + inner.toString();
     }());
   </script>
 </body>

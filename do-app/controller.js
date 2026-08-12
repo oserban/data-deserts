@@ -26,14 +26,20 @@
   };
   var socket, reconnectTimer;
   var reconnectDelay = 500;
-  var mobileUrl = new URL("/mini-controller", location.origin);
+  var applicationBase = new URL(".", location.href);
+  var mobileUrl = new URL("mini-controller", applicationBase);
   var publicUrl = new URLSearchParams(location.search).get("publicUrl");
   if (publicUrl) {
-    try { mobileUrl = new URL("/mini-controller", new URL(publicUrl)); } catch (error) { /* Use current origin. */ }
+    try {
+      var publicBase = new URL(publicUrl);
+      if (!publicBase.pathname.endsWith("/")) publicBase.pathname += "/";
+      mobileUrl = new URL("mini-controller", publicBase);
+    } catch (error) { /* Use current origin. */ }
   }
   var mobileLink = document.getElementById("mobileControllerLink");
   mobileLink.href = mobileUrl.href; mobileLink.textContent = mobileUrl.href;
-  document.getElementById("mobileControllerQr").src = "/qr?text=" + encodeURIComponent(mobileUrl.href);
+  document.getElementById("mobileControllerQr").src =
+    new URL("qr?text=" + encodeURIComponent(mobileUrl.href), applicationBase).href;
 
   function sendState() {
     if (socket && socket.readyState === WebSocket.OPEN) {
@@ -71,7 +77,9 @@
   function connect() {
     clearTimeout(reconnectTimer);
     var params = new URLSearchParams(location.search);
-    var url = params.get("ws") || ((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws");
+    var defaultSocketUrl = new URL("ws", applicationBase);
+    defaultSocketUrl.protocol = location.protocol === "https:" ? "wss:" : "ws:";
+    var url = params.get("ws") || defaultSocketUrl.href;
     setConnection("", "Connecting…");
     try { socket = new WebSocket(url); } catch (error) {
       setConnection("error", "Connection failed — retrying");

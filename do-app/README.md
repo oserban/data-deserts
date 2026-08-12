@@ -36,6 +36,44 @@ The relay keeps the most recently received state and sends it to renderers when 
 reconnect. Both browser clients reconnect automatically. Set `PORT` to use another port. A custom
 WebSocket endpoint can be supplied as a `ws` query parameter on either page.
 
+## Reverse proxy and route prefixes
+
+Browser assets, iframe URLs, QR links, and default WebSocket URLs are derived from the visible
+application path. Caddy can therefore expose multiple DO apps below different prefixes. The
+simplest configuration strips the prefix before proxying:
+
+```caddyfile
+example.org {
+  redir /data-deserts /data-deserts/ 308
+  handle_path /data-deserts/* {
+    reverse_proxy 127.0.0.1:8080
+  }
+}
+```
+
+Caddy forwards WebSocket upgrades automatically. The routes above become
+`/data-deserts/controller`, `/data-deserts/renderer`, `/data-deserts/details`,
+`/data-deserts/mini-controller`, and `/data-deserts/ws`.
+
+If the proxy retains the prefix, start the server with the matching `BASE_PATH`:
+
+```sh
+BASE_PATH=/data-deserts PORT=8080 node do-app/server.mjs
+```
+
+```caddyfile
+example.org {
+  redir /data-deserts /data-deserts/ 308
+  handle /data-deserts/* {
+    reverse_proxy 127.0.0.1:8080
+  }
+}
+```
+
+The health endpoint is available at `/data-deserts/health` through the proxy. Do not configure
+Caddy to cache `/ws`, `/qr`, or `/health`. The existing `publicUrl` and `ws` query parameters remain
+available when the externally visible addresses need explicit overrides.
+
 Development mode restarts the Node process when server code changes. It also watches browser assets
 under `app/` and `do-app/` and sends connected pages a live-reload event.
 

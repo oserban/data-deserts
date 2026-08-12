@@ -646,7 +646,11 @@
 
   function connectRemoteController() {
     var explicitUrl = query.get("ws");
-    var url = explicitUrl || ((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws");
+    var appMarker = location.pathname.indexOf("/app/");
+    var applicationPath = appMarker === -1 ? "/" : location.pathname.slice(0, appMarker + 1);
+    var defaultSocketUrl = new URL(applicationPath + "ws", location.origin);
+    defaultSocketUrl.protocol = location.protocol === "https:" ? "wss:" : "ws:";
+    var url = explicitUrl || defaultSocketUrl.href;
     var socket;
     try { socket = new WebSocket(url); remoteSocket = socket; } catch (error) {
       setRemoteConnection("error", "Connection failed — retrying");

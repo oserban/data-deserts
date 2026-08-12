@@ -8,6 +8,7 @@ import QRCode from "qrcode";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const port = Number(process.env.PORT || 8080);
+const basePath = normalizeBasePath(process.env.BASE_PATH || "");
 const types = {
   ".css": "text/css; charset=utf-8", ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8", ".json": "application/json; charset=utf-8",
@@ -25,9 +26,30 @@ const pageRoutes = {
   "/project": "/do-app/project.html",
   "/about": "/do-app/project.html"
 };
+
+function normalizeBasePath(value) {
+  if (!value || value === "/") return "";
+  return "/" + value.split("/").filter(Boolean).join("/");
+}
+
+function applicationPath(pathname) {
+  if (basePath && pathname === basePath) return "/";
+  if (basePath && pathname.startsWith(basePath + "/")) return pathname.slice(basePath.length);
+  return pathname;
+}
+
 const server = createServer(async (request, response) => {
   const requestUrl = new URL(request.url, "http://localhost");
-  const pathname = requestUrl.pathname;
+  if (basePath && requestUrl.pathname === basePath) {
+    response.writeHead(308, { Location: basePath + "/" + requestUrl.search }).end();
+    return;
+  }
+  const pathname = applicationPath(requestUrl.pathname);
+  if (pathname === "/health") {
+    response.writeHead(200, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" })
+      .end(JSON.stringify({ status: "ok" }));
+    return;
+  }
   if (pathname === "/qr") {
     const text = requestUrl.searchParams.get("text") || "";
     if (!text || text.length > 2048) {
@@ -63,7 +85,15 @@ const server = createServer(async (request, response) => {
   }
 });
 
-const relay = new WebSocketServer({ server, path: "/ws", maxPayload: 64 * 1024 });
+const relay = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 });
+
+server.on("upgrade", (request, socket, head) => {
+  let pathname;
+  try { pathname = applicationPath(new URL(request.url, "http://localhost").pathname); }
+  catch (error) { socket.destroy(); return; }
+  if (pathname !== "/ws") { socket.destroy(); return; }
+  relay.handleUpgrade(request, socket, head, (webSocket) => relay.emit("connection", webSocket, request));
+});
 
 function peerCounts() {
   let controllers = 0, miniControllers = 0, renderers = 0, details = 0;
@@ -147,11 +177,12 @@ relay.on("connection", (socket) => {
 });
 
 server.listen(port, () => {
-  console.log(`Controller: http://localhost:${port}/controller`);
-  console.log(`Mobile:     http://localhost:${port}/mini-controller`);
-  console.log(`Renderer:   http://localhost:${port}/renderer`);
-  console.log(`Details:    http://localhost:${port}/details`);
-  console.log(`Datasets:   http://localhost:${port}/datasets`);
-  console.log(`Project:    http://localhost:${port}/project`);
+  const localBase = `http://localhost:${port}${basePath}`;
+  console.log(`Controller: ${localBase}/controller`);
+  console.log(`Mobile:     ${localBase}/mini-controller`);
+  console.log(`Renderer:   ${localBase}/renderer`);
+  console.log(`Details:    ${localBase}/details`);
+  console.log(`Datasets:   ${localBase}/datasets`);
+  console.log(`Project:    ${localBase}/project`);
   if (process.env.NODE_ENV !== "production") console.log("Development live reload enabled.");
 });

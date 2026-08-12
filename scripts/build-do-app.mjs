@@ -66,9 +66,9 @@ await writeFile(resolve(output, "do-app/assets/controller.min.css"), controllerS
 
 let controllerHtml = await readFile(resolve(doApp, "controller.html"), "utf8");
 controllerHtml = controllerHtml
-  .replace('href="/do-app/controller.css"', 'href="/do-app/assets/controller.min.css"')
-  .replace(/\n  <script src="\/app\/data\/datasets\.js"><\/script>\n  <script src="\/app\/data\/world\.js"><\/script>\n  <script src="\/do-app\/controller\.js"><\/script>/,
-    '\n  <script src="/do-app/assets/controller.min.js"></script>');
+  .replace('href="do-app/controller.css"', 'href="do-app/assets/controller.min.css"')
+  .replace(/\n  <script src="app\/data\/datasets\.js"><\/script>\n  <script src="app\/data\/world\.js"><\/script>\n  <script src="do-app\/controller\.js"><\/script>/,
+    '\n  <script src="do-app/assets/controller.min.js"></script>');
 await writeFile(resolve(output, "do-app/controller.html"), controllerHtml);
 
 const [miniControllerLogic, miniControllerCss] = await Promise.all([
@@ -87,9 +87,9 @@ const miniControllerStyles = await transform(miniControllerCss, {
 await writeFile(resolve(output, "do-app/assets/mini-controller.min.css"), miniControllerStyles.code);
 let miniControllerHtml = await readFile(resolve(doApp, "mini-controller.html"), "utf8");
 miniControllerHtml = miniControllerHtml
-  .replace('href="/do-app/mini-controller.css"', 'href="/do-app/assets/mini-controller.min.css"')
-  .replace(/\n  <script src="\/app\/data\/datasets\.js"><\/script>\n  <script src="\/app\/data\/world\.js"><\/script>\n  <script src="\/do-app\/mini-controller\.js"><\/script>/,
-    '\n  <script src="/do-app/assets/mini-controller.min.js"></script>');
+  .replace('href="do-app/mini-controller.css"', 'href="do-app/assets/mini-controller.min.css"')
+  .replace(/\n  <script src="app\/data\/datasets\.js"><\/script>\n  <script src="app\/data\/world\.js"><\/script>\n  <script src="do-app\/mini-controller\.js"><\/script>/,
+    '\n  <script src="do-app/assets/mini-controller.min.js"></script>');
 await writeFile(resolve(output, "do-app/mini-controller.html"), miniControllerHtml);
 await cp(resolve(doApp, "renderer.html"), resolve(output, "do-app/renderer.html"));
 await cp(resolve(doApp, "details.html"), resolve(output, "do-app/details.html"));
@@ -110,9 +110,9 @@ const datasetsPageBundle = await transform([datasets, datasetsPageLogic].join("\
 await writeFile(resolve(output, "do-app/assets/datasets-page.min.js"), datasetsPageBundle.code);
 let datasetsHtml = await readFile(resolve(doApp, "datasets.html"), "utf8");
 datasetsHtml = datasetsHtml
-  .replace('href="/do-app/datasets.css"', 'href="/do-app/assets/datasets.min.css"')
-  .replace(/\n  <script src="\/app\/data\/datasets\.js"><\/script>\n  <script src="\/do-app\/datasets-page\.js"><\/script>/,
-    '\n  <script src="/do-app/assets/datasets-page.min.js"></script>');
+  .replace('href="do-app/datasets.css"', 'href="do-app/assets/datasets.min.css"')
+  .replace(/\n  <script src="app\/data\/datasets\.js"><\/script>\n  <script src="do-app\/datasets-page\.js"><\/script>/,
+    '\n  <script src="do-app/assets/datasets-page.min.js"></script>');
 await writeFile(resolve(output, "do-app/datasets.html"), datasetsHtml);
 
 const [projectCss, projectLogic] = await Promise.all([
@@ -131,8 +131,8 @@ await writeFile(resolve(output, "do-app/assets/project.min.css"), projectStyles.
 await writeFile(resolve(output, "do-app/assets/project.min.js"), projectBundle.code);
 let projectHtml = await readFile(resolve(doApp, "project.html"), "utf8");
 projectHtml = projectHtml
-  .replace('href="/do-app/project.css"', 'href="/do-app/assets/project.min.css"')
-  .replace('src="/do-app/project.js"', 'src="/do-app/assets/project.min.js"');
+  .replace('href="do-app/project.css"', 'href="do-app/assets/project.min.css"')
+  .replace('src="do-app/project.js"', 'src="do-app/assets/project.min.js"');
 await writeFile(resolve(output, "do-app/project.html"), projectHtml);
 await cp(resolve(doApp, "assets/project"), resolve(output, "do-app/assets/project"), { recursive: true });
 

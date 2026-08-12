@@ -53,7 +53,9 @@
   function connect() {
     clearTimeout(reconnectTimer);
     var params = new URLSearchParams(location.search);
-    var url = params.get("ws") || ((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws");
+    var defaultSocketUrl = new URL("ws", new URL(".", location.href));
+    defaultSocketUrl.protocol = location.protocol === "https:" ? "wss:" : "ws:";
+    var url = params.get("ws") || defaultSocketUrl.href;
     setConnection("", "Connecting…"); socket = new WebSocket(url);
     socket.onopen = function () {
       setConnection("connected", "Connected to display");
