@@ -13,6 +13,7 @@
   var remoteStateFrame = null, pendingRemoteState = null;
   var remoteReconnectDelay = 500;
   var activeCountrySelection = [];
+  var focusedCountry = null;
   var displayScale = 1;
   function updateDisplayScale() {
     displayScale = remoteControl
@@ -433,12 +434,21 @@
   }
 
   function renderDonuts() {
-    var size = markerSize();
+    var baseSize = markerSize();
     countryEntries.forEach(function (entry, markerIndex) {
       var feature = entry.feature, countryLayer = entry.layer;
       if (!countryInScope(feature.id)) return;
+      var focused = focusedCountry === feature.id;
+      var selected = activeCountrySelection.indexOf(feature.id) !== -1;
+      var enlarged = focused || selected;
+      // Slice acronyms are rendered at 110px and above. A selected wheel therefore gets a
+      // guaranteed readable size even at low map zoom, while retaining a cap on dense displays.
+      var size = enlarged
+        ? Math.min(280 * displayScale, Math.max(150 * displayScale, baseSize * 1.9))
+        : baseSize;
       var icon = L.divIcon({
-        className: "record-div-icon", html: donutHTML(feature, size),
+        className: "record-div-icon" + (enlarged ? " selected-record-icon" : ""),
+        html: donutHTML(feature, size),
         iconSize: [size, size], iconAnchor: [size / 2, size / 2]
       });
       var marker = recordMarkers[markerIndex];
@@ -451,6 +461,9 @@
         });
         recordMarkers[markerIndex] = marker;
       } else marker.setIcon(icon);
+      // Leaflet adds this offset to its latitude-derived marker z-index. Keep the focused wheel in
+      // a dedicated top tier and shared selections above every ordinary or hover-raised marker.
+      marker.setZIndexOffset(focused ? 200000 : selected ? 100000 + markerIndex : 0);
     });
   }
   map.on("zoomend", renderDonuts);
@@ -507,7 +520,13 @@
         escapeHTML(series.label) +
         '</span><small class="legend-maximum">' +
         (series.selected ? formatNumber(seriesMaxima[series.id]) + " max" : "off") + '</small></div>';
-    }).join("");
+    }).join("") + '<details class="count-unit-guide"><summary>What does each count mean?</summary>' +
+      datasetOrder.map(function (key) {
+        var dataset = DATASETS[key];
+        return '<div><b><i style="background:' + dataset.color + '"></i>' + escapeHTML(dataset.name) +
+          '</b><span><strong>' + escapeHTML(dataset.unit) + ':</strong> ' +
+          escapeHTML(dataset.description) + '.</span></div>';
+      }).join("") + '</details>';
     document.getElementById("recordTotal").textContent = formatNumber(selectedTotal()) + " records";
     document.getElementById("legendMax").textContent = "Grey = no records";
     document.getElementById("mapCaption").textContent =
@@ -886,7 +905,8 @@
     return '<div class="dataset-detail' + (nested ? ' nested' : '') + '"><h3><i style="background:' +
       dataset.color + '"></i><a href="' + dataset.url + '" target="_blank" rel="noopener" style="color:inherit">' +
       escapeHTML(dataset.name) + '</a></h3><p>' + formatNumber(count) + ' ' + escapeHTML(dataset.unit) +
-      ' in this window</p>' + yearStrip(key, iso) + '</div>';
+      ' in this window</p><p class="unit-explanation">' + escapeHTML(dataset.description) +
+      '.</p>' + yearStrip(key, iso) + '</div>';
   }
 
   function categoryDetailHTML(series, iso) {
@@ -956,9 +976,14 @@
       }
       return;
     }
+    focusedCountry = feature.id;
+    renderDonuts();
     openDetail(feature);
   }
-  document.getElementById("detailClose").onclick = function () { document.getElementById("detail").style.display = "none"; };
+  document.getElementById("detailClose").onclick = function () {
+    document.getElementById("detail").style.display = "none";
+    focusedCountry = null; renderDonuts();
+  };
 
   var regions = [
     { name: "World", view: function () { map.setView([25, 15], 4); } },
