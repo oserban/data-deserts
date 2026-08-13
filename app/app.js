@@ -106,6 +106,37 @@
     }, 0);
   }
 
+  // Approximate land area from the map geometry on a sphere. Density is used only for
+  // cross-country visual comparison; the detail panel continues to report source counts.
+  function ringArea(coordinates) {
+    if (!coordinates || coordinates.length < 3) return 0;
+    var total = 0, radians = Math.PI / 180;
+    for (var index = 0; index < coordinates.length; index++) {
+      var previous = coordinates[(index + coordinates.length - 1) % coordinates.length];
+      var next = coordinates[(index + 1) % coordinates.length];
+      total += (next[0] - previous[0]) * radians * Math.sin(coordinates[index][1] * radians);
+    }
+    return Math.abs(total * 6371.0088 * 6371.0088 / 2);
+  }
+
+  function geometryArea(geometry) {
+    var polygons = geometry.type === "Polygon" ? [geometry.coordinates] : geometry.coordinates;
+    return polygons.reduce(function (total, polygon) {
+      return total + polygon.reduce(function (area, ring, index) {
+        return area + ringArea(ring) * (index === 0 ? 1 : -1);
+      }, 0);
+    }, 0);
+  }
+
+  var countryAreas = {};
+  WORLD_GEOJSON.features.forEach(function (feature) {
+    countryAreas[feature.id] = Math.max(1, geometryArea(feature.geometry));
+  });
+
+  function perMillionKm2(value, iso) {
+    return value / countryAreas[iso] * 1000000;
+  }
+
   function formatNumber(value) {
     return Number(value || 0).toLocaleString();
   }
@@ -116,7 +147,7 @@
     });
   }
 
-  var seriesMaxima = {}, datasetYearRanges = {}, seriesYearRanges = {};
+  var seriesMaxima = {}, datasetMaxima = {}, datasetYearRanges = {}, seriesYearRanges = {};
 
   function polar(radius, angle) {
     var radians = (angle - 90) * Math.PI / 180;
@@ -333,32 +364,38 @@
   }
 
   function recomputeScale() {
-    seriesMaxima = {}; datasetYearRanges = {}; seriesYearRanges = {};
+    seriesMaxima = {}; datasetMaxima = {}; datasetYearRanges = {}; seriesYearRanges = {};
     var series = displaySeries();
     var datasetValues = {}, seriesValues = {}, normalizationCountries = {};
     datasetOrder.forEach(function (key) {
       datasetValues[key] = [];
+      datasetMaxima[key] = 0;
       Object.keys(DATASETS[key].records).forEach(function (iso) {
         normalizationCountries[iso] = true;
         Object.keys(DATASETS[key].records[iso]).forEach(function (year) {
-          datasetValues[key].push(DATASETS[key].records[iso][year]);
+          datasetValues[key].push(perMillionKm2(DATASETS[key].records[iso][year], iso));
         });
       });
     });
     series.forEach(function (item) { seriesMaxima[item.id] = 0; seriesValues[item.id] = []; });
     WORLD_GEOJSON.features.forEach(function (feature) {
       if (!countryInScope(feature.id)) return;
+      datasetOrder.forEach(function (key) {
+        datasetMaxima[key] = Math.max(datasetMaxima[key],
+          perMillionKm2(datasetCount(key, feature.id), feature.id));
+      });
       series.forEach(function (item) {
-        seriesMaxima[item.id] = Math.max(seriesMaxima[item.id], seriesCount(item, feature.id));
+        seriesMaxima[item.id] = Math.max(seriesMaxima[item.id],
+          perMillionKm2(seriesCount(item, feature.id), feature.id));
       });
     });
     Object.keys(normalizationCountries).forEach(function (iso) {
       series.forEach(function (item) {
         for (var year = META.yearMin; year <= META.yearMax; year++) {
-          seriesValues[item.id].push(item.keys.reduce(function (total, key) {
-            if (!state.selected[key]) return total;
-            return total + ((DATASETS[key].records[iso] || {})[String(year)] || 0);
-          }, 0));
+            seriesValues[item.id].push(perMillionKm2(item.keys.reduce(function (total, key) {
+              if (!state.selected[key]) return total;
+              return total + ((DATASETS[key].records[iso] || {})[String(year)] || 0);
+            }, 0), iso));
         }
       });
     });
@@ -401,7 +438,7 @@
       if (!state.yearlyHistograms) {
         var value = seriesCount(item, feature.id);
         paths.push('<path d="' + ringPath(sectorStart, sectorEnd) + '" fill="' +
-          assessmentColor(value, seriesMaxima[item.id]) + '" class="sector' +
+          assessmentColor(perMillionKm2(value, feature.id), seriesMaxima[item.id]) + '" class="sector' +
           (value ? "" : " empty-sector") + '"></path>');
         return;
       }
@@ -414,7 +451,7 @@
         var start = sectorStart + (year - state.yearFrom) * bucketWidth;
         var end = Math.min(sectorEnd, start + Math.max(0.08, bucketWidth - 0.08));
         paths.push('<path d="' + ringPath(start, end) + '" fill="' +
-          scoreColor(minMaxScore(count, seriesYearRanges[item.id])) + '" class="bucket"></path>');
+          scoreColor(minMaxScore(perMillionKm2(count, feature.id), seriesYearRanges[item.id])) + '" class="bucket"></path>');
       }
     });
     var fontSize = Math.max(4 * displayScale,
@@ -488,6 +525,77 @@
     return totals;
   }
 
+  function countryCoverageAssessment(feature) {
+    var keys = selectedKeys();
+    var scores = keys.map(function (key) {
+      var density = perMillionKm2(datasetCount(key, feature.id), feature.id);
+      var maximum = datasetMaxima[key] || 0;
+      var annualMaximum = (datasetYearRanges[key] || {}).max || 0;
+      var yearsWithRecords = 0, temporalScore = 0;
+      for (var year = state.yearFrom; year <= state.yearTo; year++) {
+        var count = ((DATASETS[key].records[feature.id] || {})[String(year)] || 0);
+        if (count) yearsWithRecords++;
+        if (count && annualMaximum) {
+          temporalScore += Math.log1p(perMillionKm2(count, feature.id)) / Math.log1p(annualMaximum);
+        }
+      }
+      var yearCount = state.yearTo - state.yearFrom + 1;
+      temporalScore = yearCount ? temporalScore / yearCount : 0;
+      var totalScore = density && maximum ? Math.log1p(density) / Math.log1p(maximum) : 0;
+      return {
+        key: key,
+        // Reward both total volume and sustained annual volume. This prevents a single
+        // unusually large year from dominating the "good coverage" examples.
+        score: totalScore * 0.6 + temporalScore * 0.4,
+        present: density > 0,
+        yearsWithRecords: yearsWithRecords
+      };
+    });
+    var activeDatasetYears = scores.reduce(function (total, item) {
+      return total + item.yearsWithRecords;
+    }, 0);
+    var possibleDatasetYears = scores.length * (state.yearTo - state.yearFrom + 1);
+    return {
+      feature: feature,
+      score: scores.length ? scores.reduce(function (total, item) { return total + item.score; }, 0) / scores.length : 0,
+      present: scores.filter(function (item) { return item.present; }).length,
+      total: scores.length,
+      activeDatasetYears: activeDatasetYears,
+      possibleDatasetYears: possibleDatasetYears,
+      gaps: scores.filter(function (item) { return item.score < 0.33; }).map(function (item) {
+        return DATASETS[item.key].name;
+      })
+    };
+  }
+
+  function renderCoverageExamples() {
+    var container = document.getElementById("coverageExamples");
+    if (!container) return;
+    var assessments = WORLD_GEOJSON.features.filter(function (feature) {
+      return countryInScope(feature.id);
+    }).map(countryCoverageAssessment).sort(function (first, second) {
+      return second.score - first.score || first.feature.properties.name.localeCompare(second.feature.properties.name);
+    });
+    if (!selectedKeys().length) {
+      container.innerHTML = '<div class="empty">Select at least one dataset to generate examples.</div>';
+      return;
+    }
+    var strongest = assessments.slice(0, 4);
+    var weakest = assessments.slice(-4).reverse();
+    function group(title, examples, low) {
+      return '<section class="example-group"><h3>' + title + '</h3>' + examples.map(function (item) {
+        var note = item.present + ' of ' + item.total + ' selected sources contain records; records occur in ' +
+          item.activeDatasetYears + ' of ' + item.possibleDatasetYears + ' possible source-years.';
+        if (low && item.gaps.length) note += ' Lower or absent: ' + item.gaps.join(', ') + '.';
+        return '<button type="button" class="example-country" data-example-country="' + item.feature.id +
+          '"><b>' + escapeHTML(item.feature.properties.name) + '</b><small>' + escapeHTML(note) + '</small></button>';
+      }).join('') + '</section>';
+    }
+    container.innerHTML = '<p class="examples-method">Examples update with the selected sources and time window. “Good” combines total records per million km² with sustained annual record volume, so broad coverage over time ranks above a single-year spike. It does not mean good data quality overall.</p>' +
+      '<div class="example-columns">' + group('Relatively good coverage', strongest, false) +
+      group('Very low coverage', weakest, true) + '</div>';
+  }
+
   function renderHistogram() {
     var totals = yearlyTotals();
     var range = positiveRange(Object.keys(totals).map(function (year) { return totals[year]; }));
@@ -507,9 +615,9 @@
     document.getElementById("datasetLegend").innerHTML =
       (state.groupedDonuts ? '<div class="legend-group-title">Grouped by category</div>' :
         '<div class="legend-group-title">Individual datasets</div>') + donutLegendHTML(legendSeries) +
-      '<div class="legend-group-title count-scale-title">Count scale within each sector</div>' +
+      '<div class="legend-group-title count-scale-title">Relative coverage within each source</div>' +
       '<div class="assessment-gradient"></div><div class="assessment-gradient-labels">' +
-      '<span>Low</span><span>Average</span><span>High</span></div>' + legendSeries.map(function (series) {
+      '<span>Lower</span><span>Mid-range</span><span>Higher</span></div>' + legendSeries.map(function (series) {
       var identity = state.groupedDonuts
         ? '<span class="legend-category-swatches">' + series.keys.map(function (key) {
           return '<i style="background:' + DATASETS[key].color + ';opacity:' + (state.selected[key] ? 1 : 0.25) + '"></i>';
@@ -519,7 +627,7 @@
         '">' + identity + '<span class="legend-series-name' + (state.groupedDonuts ? ' category-name' : '') + '">' +
         escapeHTML(series.label) +
         '</span><small class="legend-maximum">' +
-        (series.selected ? formatNumber(seriesMaxima[series.id]) + " max" : "off") + '</small></div>';
+        (series.selected ? formatNumber(Math.round(seriesMaxima[series.id])) + " / million km² max" : "off") + '</small></div>';
     }).join("") + '<details class="count-unit-guide"><summary>What does each count mean?</summary>' +
       datasetOrder.map(function (key) {
         var dataset = DATASETS[key];
@@ -534,6 +642,7 @@
       " · " + state.yearFrom + "–" + state.yearTo + " · " +
       (state.yearlyHistograms ? "yearly " : "") +
       (state.groupedDonuts ? "category radial sectors" : "dataset radial sectors");
+    renderCoverageExamples();
   }
 
   function syncHash() {
@@ -880,7 +989,8 @@
     }
     return '<div class="year-strip" style="grid-template-columns:repeat(' + years.length + ',1fr)">' +
       years.map(function (count, index) {
-        var opacity = count ? 0.25 + 0.75 * minMaxScore(count, datasetYearRanges[key]) : 0;
+      var opacity = count ? 0.25 + 0.75 * minMaxScore(
+        perMillionKm2(count, iso), datasetYearRanges[key]) : 0;
         return '<i title="' + (state.yearFrom + index) + ': ' + formatNumber(count) + '" style="background:' +
       dataset.color + ';opacity:' + opacity + '"></i>';
       }).join("") + '</div><div class="year-axis"><span>' + state.yearFrom + '</span><span>' + state.yearTo + '</span></div>';
@@ -894,7 +1004,8 @@
     }
     return '<div class="year-strip" style="grid-template-columns:repeat(' + years.length + ',1fr)">' +
       years.map(function (count, index) {
-        var opacity = count ? 0.25 + 0.75 * minMaxScore(count, seriesYearRanges[series.id]) : 0;
+      var opacity = count ? 0.25 + 0.75 * minMaxScore(
+        perMillionKm2(count, iso), seriesYearRanges[series.id]) : 0;
         return '<i title="' + (state.yearFrom + index) + ': ' + formatNumber(count) + '" style="background:' +
           series.color + ';opacity:' + opacity + '"></i>';
       }).join("") + '</div><div class="year-axis"><span>' + state.yearFrom + '</span><span>' + state.yearTo + '</span></div>';
@@ -926,12 +1037,32 @@
     var keys = selectedKeys();
     return !countryInScope(iso)
       ? '<div class="empty">Records are shown only for countries with DHS participant data.</div>'
-      : keys.length ? (state.groupedDonuts
+      : keys.length ? coverageSummaryHTML(iso) + (state.groupedDonuts
         ? displaySeries().filter(function (series) { return series.selected; }).map(function (series) {
           return categoryDetailHTML(series, iso);
         }).join("")
         : keys.map(function (key) { return datasetDetailHTML(key, iso, false); }).join(""))
       : '<div class="empty">Select at least one dataset to see its records.</div>';
+  }
+
+  function coverageSummaryHTML(iso) {
+    var assessed = selectedKeys().map(function (key) {
+      var density = perMillionKm2(datasetCount(key, iso), iso);
+      var maximum = datasetMaxima[key] || 0;
+      return { key: key, score: density && maximum ? Math.log1p(density) / Math.log1p(maximum) : 0 };
+    });
+    var wellCovered = assessed.filter(function (item) { return item.score >= 0.66; });
+    var gaps = assessed.filter(function (item) { return item.score < 0.33; });
+    var headline = wellCovered.length === assessed.length
+      ? "Broad coverage across selected sources"
+      : gaps.length ? "Coverage gaps across selected sources" : "Mixed coverage across selected sources";
+    var detail = gaps.length
+      ? "Lower or absent relative coverage: " + gaps.map(function (item) {
+        return DATASETS[item.key].name;
+      }).join(", ") + "."
+      : "No selected source falls in the lower third of the displayed coverage scale.";
+    return '<section class="coverage-profile"><h3>' + headline + '</h3><p>' + escapeHTML(detail) +
+      '</p><small>Screening summary based on records per million km² relative to other DHS-covered countries; it does not assess data quality or research need.</small></section>';
   }
 
   function openDetail(feature) {
@@ -1037,6 +1168,30 @@
   document.getElementById("introClose").onclick = function () { setIntro(false); };
   document.getElementById("helpButton").onclick = function () { setIntro(true); };
 
+  function setCoverage(open) {
+    var modal = document.getElementById("coverageModal");
+    modal.classList.toggle("open", open);
+    modal.setAttribute("aria-hidden", open ? "false" : "true");
+    if (open) document.getElementById("coverageClose").focus();
+  }
+  document.getElementById("coverageButton").onclick = function () { setCoverage(true); };
+  document.getElementById("coverageClose").onclick = function () { setCoverage(false); };
+  document.getElementById("coverageModal").onclick = function (event) {
+    if (event.target === event.currentTarget) setCoverage(false);
+  };
+  document.getElementById("coverageExamples").onclick = function (event) {
+    var button = event.target.closest("[data-example-country]");
+    if (!button) return;
+    var feature = WORLD_GEOJSON.features.find(function (item) {
+      return item.id === button.dataset.exampleCountry;
+    });
+    if (!feature) return;
+    setCoverage(false);
+    var entry = countryEntries.find(function (item) { return item.feature === feature; });
+    if (entry) map.fitBounds(entry.layer.getBounds(), { maxZoom: 5 });
+    handleCountrySelection(feature);
+  };
+
   function setLicences(open) {
     var modal = document.getElementById("licencesModal");
     modal.classList.toggle("open", open);
@@ -1049,7 +1204,7 @@
     if (event.target === event.currentTarget) setLicences(false);
   };
   document.addEventListener("keydown", function (event) {
-    if (event.key === "Escape") setLicences(false);
+    if (event.key === "Escape") { setLicences(false); setCoverage(false); }
   });
 
   if (!remoteControl) loadHash();

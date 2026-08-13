@@ -11,7 +11,7 @@
   <aside id="sidebar">
     <header>
       <h1><span class="dot"></span>Data Deserts</h1>
-      <p><b>Data Deserts</b> shows how limited investment in data leaves little overlapping evidence
+      <p><b>Data Deserts</b> shows how uncoordinated and sector-limited investment in data can leave little overlapping evidence
         across Ecology, Hydrology, Agriculture, and Public Health—domains that are deeply interconnected.
         Without comparable coverage across them, cross-domain research is constrained precisely
         where joined-up evidence is most needed.</p>
@@ -23,7 +23,7 @@
     <section class="legend-section">
       <h2>Legend</h2>
       <div id="datasetLegend"></div>
-      <div class="legend-ends"><span>Relative within each sector</span><span id="legendMax">Grey = no records</span></div>
+      <div class="legend-ends"><span>Within-source records per area</span><span id="legendMax">Grey = no records</span></div>
     </section>
 
     <section class="filters-section">
@@ -102,6 +102,9 @@
         <button type="button" id="licencesButton" class="toolbar-action" aria-label="Data and licences" data-tooltip="Data &amp; licences">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3.5h8l4 4V20.5H6z"></path><path d="M14 3.5v4h4M9 12h6M9 16h6"></path></svg>
         </button>
+        <button type="button" id="coverageButton" class="toolbar-action" aria-label="Coverage examples" data-tooltip="Coverage examples">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V9h4v10M10 19V5h4v14M16 19v-7h4v7M3 19.5h18"></path></svg>
+        </button>
         <button type="button" id="helpButton" class="toolbar-action" aria-label="Help" data-tooltip="Help">
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M9.7 9a2.4 2.4 0 1 1 3.5 2.1c-.8.4-1.2.9-1.2 1.9M12 17h.01"></path></svg>
         </button>
@@ -127,11 +130,23 @@
         <h2>Where does data exist — and where doesn't it?</h2>
         <p>This map gives an overall, dataset-segmented record assessment for countries included in the
           <a href="https://dhsprogram.com/countries/" target="_blank" rel="noopener">DHS Program</a>.
-          Each radial segment is normalized only against the same dataset or category in other DHS-covered countries. Pick a
+          Each radial segment compares records per million km² only against the same dataset or category in other DHS-covered countries; sources with different count units are never compared directly. Pick a
           <b>time window</b>, filter the included datasets, and <b>click a country</b> to inspect its underlying records.
           Countries without DHS participant data remain greyed out.</p>
         <div class="intro-actions"><button id="introClose">Explore the map</button></div>
         <small>You can reopen this introduction with Help.</small>
+      </div>
+    </div>
+
+    <div id="coverageModal" class="modal-overlay" role="dialog" aria-modal="true"
+      aria-labelledby="coverageTitle" aria-hidden="true">
+      <div class="modal-card coverage-card">
+        <button class="close" id="coverageClose" aria-label="Close coverage examples">×</button>
+        <h2 id="coverageTitle">Examples of relative coverage</h2>
+        <div class="coverage-caveat"><strong>Coverage is only one dimension of data quality.</strong>
+          These examples describe record availability per unit area and over time. They do not assess accuracy,
+          representativeness, sampling design, accessibility, fitness for purpose, or research need.</div>
+        <div id="coverageExamples"></div>
       </div>
     </div>
 

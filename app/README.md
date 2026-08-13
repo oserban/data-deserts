@@ -49,10 +49,10 @@ extra enclosing directory inside the archive.
 - Sector and legend ordering comes from generated metadata and is shared everywhere: BioTIME →
   Living Planet → PREDICTS → GBIF → LSMS-ISA → DHS → MICS → LSMS in dataset mode, and Ecology →
   Agriculture → Public Health in category mode.
-- Every in-scope country has an eight-sector radial coverage chart. Sector intensity is
-  log-normalized independently within its dataset. Every sector uses the same red → yellow → green
-  scale for low → average → high counts; grey means no records. Raw magnitudes are not compared
-  across sources.
+- Every in-scope country has an eight-sector radial coverage chart. Sector intensity uses records
+  per million km² and is log-normalized independently within its dataset. Every sector uses the
+  same red → yellow → green scale for lower → mid-range → higher relative coverage; grey means no
+  records. Raw magnitudes are not compared across sources, and the detail panel retains raw counts.
 - **Annual time bins** divide each sector into one bin per selected year. Missing years stay
   blank. Time-series intensities use a min–max scale calculated independently for each dataset from
   all of that dataset's country-year observations, so the same value has the same intensity in every
