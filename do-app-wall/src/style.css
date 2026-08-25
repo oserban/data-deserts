@@ -1,0 +1,354 @@
+@import 'tailwindcss' source(none);
+@source './**/*.{ts,tsx}';
+
+.year-range {
+    --range-start: 0%;
+    --range-end: 100%;
+
+    position: relative;
+    height: 2rem;
+}
+
+.year-range__track,
+.year-range__selection {
+    position: absolute;
+    top: 50%;
+    right: 0;
+    left: 0;
+    height: 0.375rem;
+    translate: 0 -50%;
+    border-radius: 9999px;
+}
+
+.year-range__track {
+    background: #2c3e50;
+}
+
+.year-range__selection {
+    right: calc(100% - var(--range-end));
+    left: var(--range-start);
+    background: #5ec5ff;
+}
+
+.year-range input[type='range'] {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    margin: 0;
+    appearance: none;
+    background: transparent;
+    pointer-events: none;
+}
+
+.year-range input[type='range']::-webkit-slider-runnable-track {
+    height: 0.375rem;
+    background: transparent;
+}
+
+.year-range input[type='range']::-webkit-slider-thumb {
+    width: 1.25rem;
+    height: 1.25rem;
+    margin-top: -0.4375rem;
+    appearance: none;
+    border: 3px solid #172230;
+    border-radius: 9999px;
+    background: #5ec5ff;
+    box-shadow: 0 0 0 1px #5ec5ff;
+    cursor: grab;
+    pointer-events: auto;
+}
+
+.year-range input[type='range']::-moz-range-track {
+    height: 0.375rem;
+    background: transparent;
+}
+
+.year-range input[type='range']::-moz-range-thumb {
+    width: 0.875rem;
+    height: 0.875rem;
+    border: 3px solid #172230;
+    border-radius: 9999px;
+    background: #5ec5ff;
+    box-shadow: 0 0 0 1px #5ec5ff;
+    cursor: grab;
+    pointer-events: auto;
+}
+
+.year-range input[type='range']:focus-visible::-webkit-slider-thumb,
+.year-range input[type='range']:focus-visible::-moz-range-thumb {
+    outline: 2px solid white;
+    outline-offset: 2px;
+}
+
+@custom-variant dark (&:is(.dark *));
+@custom-variant touch (@media (hover: none));
+
+/* Global design tokens (light mode baseline). */
+:root {
+    color-scheme: light;
+    --background: oklch(1 0 0);
+    --foreground: oklch(0.145 0 0);
+    --card: oklch(0.922 0 0);
+    --card-foreground: oklch(0.145 0 0);
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.145 0 0);
+    --primary: oklch(0.205 0 0);
+    --primary-foreground: oklch(0.985 0 0);
+    --secondary: oklch(0.97 0 0);
+    --secondary-foreground: oklch(0.205 0 0);
+    --muted: oklch(0.97 0 0);
+    --muted-foreground: oklch(0.556 0 0);
+    --accent: oklch(0.97 0 0);
+    --accent-foreground: oklch(0.205 0 0);
+    --destructive: oklch(0.58 0.22 27);
+    --border: oklch(0.922 0 0);
+    --input: oklch(0.922 0 0);
+    --ring: oklch(0.708 0 0);
+    --chart-1: oklch(0.809 0.105 251.813);
+    --chart-2: oklch(0.623 0.214 259.815);
+    --chart-3: oklch(0.546 0.245 262.881);
+    --chart-4: oklch(0.488 0.243 264.376);
+    --chart-5: oklch(0.424 0.199 265.638);
+    --radius: 0.625rem;
+    --sidebar: oklch(0.985 0 0);
+    --sidebar-foreground: oklch(0.145 0 0);
+    --sidebar-primary: oklch(0.205 0 0);
+    --sidebar-primary-foreground: oklch(0.985 0 0);
+    --sidebar-accent: oklch(0.97 0 0);
+    --sidebar-accent-foreground: oklch(0.205 0 0);
+    --sidebar-border: oklch(0.922 0 0);
+    --sidebar-ring: oklch(0.708 0 0);
+    --checker-color: #e5e5e5;
+    --checker-bg: #ffffff;
+    --imperial-blue: #003e74;
+    --imperial-font: 'Meta', Arial;
+}
+
+.font-imperial {
+    font-family: var(--imperial-font), sans-serif;
+}
+
+h1,
+h2,
+h3 {
+    font-family: var(--imperial-font), sans-serif;
+}
+
+@keyframes existing-marker-pulse {
+    0%,
+    100% {
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(0.45);
+    }
+    18% {
+        opacity: 0.9;
+    }
+    55% {
+        opacity: 0;
+        transform: translate(-50%, -50%) scale(2.15);
+    }
+}
+
+.existing-marker-pulse {
+    animation: existing-marker-pulse 4.2s ease-out infinite;
+}
+
+@keyframes concept-network-flow {
+    to {
+        stroke-dashoffset: -72;
+    }
+}
+
+@keyframes concept-observation-pulse {
+    0%,
+    100% {
+        opacity: 0.48;
+        transform: scale(0.72);
+    }
+    45% {
+        opacity: 1;
+        transform: scale(1.45);
+    }
+}
+
+@keyframes concept-observation-emerge {
+    0%,
+    18%,
+    100% {
+        opacity: 0;
+        transform: scale(0.15);
+    }
+    42%,
+    82% {
+        opacity: 1;
+        transform: scale(1.2);
+    }
+}
+
+@keyframes concept-desert-resolve {
+    0%,
+    24%,
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+    60%,
+    78% {
+        opacity: 0.08;
+        transform: scale(0.18);
+    }
+}
+
+@keyframes concept-inference-emerge {
+    0%,
+    32%,
+    100% {
+        opacity: 0;
+        transform: scale(0.15);
+        fill: #b58cff;
+    }
+    55% {
+        opacity: 1;
+        transform: scale(1.55);
+        fill: #b58cff;
+    }
+    76%,
+    88% {
+        opacity: 0.95;
+        transform: scale(1);
+        fill: #5ec5ff;
+    }
+}
+
+@keyframes concept-uncertainty-orbit {
+    0%,
+    30%,
+    100% {
+        opacity: 0;
+        transform: rotate(0deg) scale(0.5);
+    }
+    52%,
+    88% {
+        opacity: 0.78;
+        transform: rotate(240deg) scale(1);
+    }
+}
+
+@keyframes concept-land-breathe {
+    50% {
+        opacity: 0.72;
+        transform: scale(1.008);
+    }
+}
+
+.wall-animation-syncing .concept-land path,
+.wall-animation-syncing .concept-network,
+.wall-animation-syncing .concept-observation,
+.wall-animation-syncing .concept-void,
+.wall-animation-syncing .concept-inferred,
+.wall-animation-syncing .concept-uncertainty {
+    animation-play-state: paused !important;
+}
+
+.concept-land path {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: concept-land-breathe 6s ease-in-out infinite;
+}
+
+.concept-land path:nth-child(even) {
+    animation-delay: -3s;
+}
+.concept-network {
+    opacity: 0.58;
+    animation: concept-network-flow 2.8s linear infinite;
+}
+.concept-observation {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: concept-observation-pulse 3.6s ease-in-out infinite;
+}
+.concept-observation-emerging {
+    animation-name: concept-observation-emerge;
+    animation-duration: 12s;
+}
+.concept-void {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: concept-desert-resolve 12s ease-in-out infinite;
+}
+.concept-inferred {
+    transform-box: fill-box;
+    transform-origin: center;
+    opacity: 0;
+    animation: concept-inference-emerge 12s ease-in-out infinite;
+}
+.concept-uncertainty {
+    transform-box: fill-box;
+    transform-origin: center;
+    opacity: 0;
+    animation: concept-uncertainty-orbit 12s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .existing-marker-pulse,
+    .concept-land path,
+    .concept-network,
+    .concept-observation,
+    .concept-void,
+    .concept-inferred,
+    .concept-uncertainty {
+        animation: none;
+    }
+
+    .existing-marker-pulse {
+        opacity: 0;
+    }
+    .concept-observation,
+    .concept-void,
+    .concept-inferred {
+        opacity: 0.85;
+        transform: scale(1);
+    }
+    .concept-uncertainty {
+        opacity: 0.55;
+    }
+}
+
+/* Dark-mode overrides: same semantic variables, different values. */
+.dark {
+    color-scheme: dark;
+    --background: oklch(0.145 0 0);
+    --foreground: oklch(0.985 0 0);
+    --card: oklch(1 0 0 / 10%);
+    --card-foreground: oklch(0.985 0 0);
+    --popover: oklch(0.205 0 0);
+    --popover-foreground: oklch(0.985 0 0);
+    --primary: oklch(0.87 0 0);
+    --primary-foreground: oklch(0.205 0 0);
+    --secondary: oklch(0.269 0 0);
+    --secondary-foreground: oklch(0.985 0 0);
+    --muted: oklch(0.269 0 0);
+    --muted-foreground: oklch(0.708 0 0);
+    --accent: oklch(0.371 0 0);
+    --accent-foreground: oklch(0.985 0 0);
+    --destructive: oklch(0.704 0.191 22.216);
+    --border: oklch(1 0 0 / 10%);
+    --input: oklch(1 0 0 / 15%);
+    --ring: oklch(0.556 0 0);
+    --chart-1: oklch(0.809 0.105 251.813);
+    --chart-2: oklch(0.623 0.214 259.815);
+    --chart-3: oklch(0.546 0.245 262.881);
+    --chart-4: oklch(0.488 0.243 264.376);
+    --chart-5: oklch(0.424 0.199 265.638);
+    --sidebar: oklch(0.205 0 0);
+    --sidebar-foreground: oklch(0.985 0 0);
+    --sidebar-primary: oklch(0.488 0.243 264.376);
+    --sidebar-primary-foreground: oklch(0.985 0 0);
+    --sidebar-accent: oklch(0.269 0 0);
+    --sidebar-accent-foreground: oklch(0.985 0 0);
+    --sidebar-border: oklch(1 0 0 / 10%);
+    --sidebar-ring: oklch(0.556 0 0);
+    --checker-color: #262626;
+    --checker-bg: #171717;
+}

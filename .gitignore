@@ -16,6 +16,7 @@ lerna-debug.log*
 *.local
 .env
 .env.local
+do-app-wall/.env
 __pycache__/
 ~$*.xlsx
 venv/

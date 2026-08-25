@@ -1,0 +1,59 @@
+# Place the map block in nginx.conf's http {} context. If your installation already defines a
+# WebSocket connection map, reuse that definition instead.
+map $http_upgrade $data_deserts_connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+# Add these locations to the HTTPS server {} block for your public hostname.
+# The Nitro process is expected to use HOST=127.0.0.1, PORT=8080 and
+# APP_BASE_PATH=/data-deserts.
+
+location = /data-deserts {
+    return 308 /data-deserts/;
+}
+
+# Long-lived realtime controller and screen synchronization.
+location = /data-deserts/bus {
+    proxy_pass http://127.0.0.1:8080/bus;
+    proxy_http_version 1.1;
+
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-Prefix /data-deserts;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $data_deserts_connection_upgrade;
+
+    proxy_read_timeout 1d;
+    proxy_send_timeout 1d;
+    proxy_buffering off;
+    proxy_cache off;
+}
+
+# Hashed client assets are immutable and safe to cache for a year.
+location ^~ /data-deserts/assets/ {
+    proxy_pass http://127.0.0.1:8080/assets/;
+    proxy_set_header Host $host;
+    expires 1y;
+    add_header Cache-Control "public, max-age=31536000, immutable" always;
+}
+
+# SSR pages, REST routes, project images, health checks and mini-controller routes.
+# The trailing slash on proxy_pass strips /data-deserts before forwarding to Nitro.
+location /data-deserts/ {
+    proxy_pass http://127.0.0.1:8080/;
+    proxy_http_version 1.1;
+
+    # Preserve the public mount point if an upstream response redirects to a root-relative URL.
+    proxy_redirect ~^(/.*)$ /data-deserts$1;
+
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-Prefix /data-deserts;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+    proxy_cache off;
+}
