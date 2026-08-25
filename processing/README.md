@@ -37,6 +37,11 @@ their country/year sum, then writes:
 
 - `app/data/datasets.js`
 - `app/data/world.js`
+- `do-app-wall/src/data/datasets.json`
+- `do-app-wall/src/data/world.json`
+
+The wall JSON artifacts are written directly from the validated Python data structures rather than
+being converted from the legacy JavaScript bundles.
 
 The map export loads and validates `processing/data/world.raw.geojson` as a GeoJSON FeatureCollection
 of identified Polygon/MultiPolygon country features. Natural Earth's shared `-99` fallback ID is

@@ -4,17 +4,10 @@
   "scripts": {
     "build": "npm run build:data && npm run build:app",
     "build:app": "node scripts/build-app.mjs",
-    "build:data": "python processing/build_data.py",
-    "fetch:all": "PYTHON_BIN=python bash processing/fetch_all.sh",
+    "build:data": "python3 processing/build_data.py",
+    "fetch:all": "PYTHON_BIN=python3 bash processing/fetch_all.sh",
     "deploy:vercel": "node --env-file=.env scripts/deploy-app-vercel.mjs",
-    "build:do-app": "node scripts/build-do-app.mjs",
-    "do-app": "npm run do-app:dev",
-    "do-app:dev": "NODE_ENV=development node --watch --watch-preserve-output do-app/server.mjs",
-    "do-app:prod": "NODE_ENV=production node do-app/server.mjs"
-  },
-  "dependencies": {
-    "qrcode": "^1.5.4",
-    "ws": "^8.18.0"
+    "build:do-wall": "node scripts/build-do-wall.mjs"
   },
   "devDependencies": {
     "archiver": "^8.0.0",

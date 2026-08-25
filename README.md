@@ -34,7 +34,7 @@ data-deserts/
 │   ├── styles/app.css           Application styling
 │   ├── data/                    Generated JavaScript data bundles
 │   └── vendor/                  Bundled Leaflet assets
-├── do-app/                      WebSocket controller and map-renderer application
+├── do-app-wall/                 SSR application for the distributed 16×4 display wall
 ├── scripts/build-app.mjs        Production asset builder
 ├── dist/                        Ignored production build output
 ├── processing/                  Data acquisition and transformation
@@ -72,6 +72,8 @@ The build validates the common `{ISO3: {year: count}}` schema and the world boun
 
 - `app/data/datasets.js`
 - `app/data/world.js`
+- `do-app-wall/src/data/datasets.json`
+- `do-app-wall/src/data/world.json`
 
 `app/data/datasets.js` is a deployable artifact containing processed records and is ignored by Git.
 GitHub contains the data-free schema example `app/data/datasets.template.js`. A deployment must make
@@ -121,14 +123,16 @@ Obfuscation is only a deterrent. Data delivered to a web browser can still be re
 network and debugging tools. Data that must remain secret requires server-side aggregation or an API
 that returns only the values needed for the current view.
 
-The controller/renderer DO App has a separate standalone production build:
+The distributed SSR wall has a separate standalone production build:
 
 ```sh
-npm run build:do-app
+npm run build:do-wall
 ```
 
-It creates `data-deserts-do-app-linux.zip`, which runs on Node.js 20 or newer without installing
-runtime packages. See [do-app/README.md](do-app/README.md) for deployment details.
+It creates `data-deserts-do-wall-linux.zip`. After extracting it on a Linux server with Node.js
+22.13 or newer, run `HOST=0.0.0.0 PORT=8080 node server/index.mjs`. No package installation is
+required on the server. See [do-app-wall/README.md](do-app-wall/README.md) for display addressing and
+deployment details.
 
 ## Adding a dataset
 

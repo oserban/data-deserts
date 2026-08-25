@@ -42,10 +42,10 @@
       <div class="filter-state-buttons" aria-label="Visualisation filters">
         <button type="button" class="icon-state-button" id="yearlyBucketsToggle"
           title="Annual time bins — Split each dataset sector into one bin per year; gaps mean no records."
-          aria-label="Enable annual time bins" aria-pressed="false"><span aria-hidden="true">x̄</span></button>
+          aria-label="Enable annual time bins" aria-pressed="false"><span class="state-icon annual-icon" aria-hidden="true"></span><b>Annual bins</b></button>
         <button type="button" class="icon-state-button" id="groupingToggle"
           title="Group radial sectors by category" aria-label="Group radial sectors by category"
-          aria-pressed="false"><span aria-hidden="true">◫</span></button>
+          aria-pressed="false"><span class="state-icon category-icon" aria-hidden="true"><i></i><i></i><i></i></span><b>Categories</b></button>
       </div>
     </section>
 
@@ -90,10 +90,10 @@
 
   <main id="mapwrap">
     <div id="map"></div>
-    <div id="remoteConnection" class="remote-connection" aria-live="polite"><i></i><span>Connecting…</span></div>
     <div id="toolbar">
       <div id="regions" class="pillbar"></div>
-      <input id="search" list="countryList" placeholder="Search a country…" autocomplete="off" />
+      <input id="search" list="countryList" placeholder="Search a country…" autocomplete="off"
+        aria-label="Search for a country" />
       <datalist id="countryList"></datalist>
       <div class="toolbar-actions" aria-label="Application actions">
         <button type="button" id="shareButton" class="toolbar-action" aria-label="Share view" data-tooltip="Share view">

@@ -20,6 +20,8 @@ Writes:
 
     ../app/data/world.js
     ../app/data/datasets.js
+    ../do-app-wall/src/data/world.json
+    ../do-app-wall/src/data/datasets.json
 
 Run from the repository root:
 
@@ -27,6 +29,7 @@ Run from the repository root:
 """
 
 import json
+import math
 import os
 
 from data_deserts import load_geojson
@@ -35,7 +38,30 @@ from data_deserts import load_geojson
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(HERE, "data")
 APP_DATA_DIR = os.path.join(HERE, "..", "app", "data")
+WALL_DATA_DIR = os.path.join(HERE, "..", "do-app-wall", "src", "data")
 BOUNDARIES_PATH = os.path.join(DATA_DIR, "world.raw.geojson")
+
+
+def ring_area(coordinates):
+    """Approximate a GeoJSON ring area in square kilometres on a sphere."""
+    if not coordinates or len(coordinates) < 3:
+        return 0
+    radians = math.pi / 180
+    total = 0
+    for index, coordinate in enumerate(coordinates):
+        previous = coordinates[(index - 1) % len(coordinates)]
+        following = coordinates[(index + 1) % len(coordinates)]
+        total += ((following[0] - previous[0]) * radians *
+                  math.sin(coordinate[1] * radians))
+    return abs(total * 6371.0088 * 6371.0088 / 2)
+
+
+def geometry_area(geometry):
+    polygons = ([geometry["coordinates"]] if geometry["type"] == "Polygon"
+                else geometry["coordinates"])
+    return sum(sum(ring_area(ring) * (1 if index == 0 else -1)
+                   for index, ring in enumerate(polygon))
+               for polygon in polygons)
 
 DATASET_DEFINITIONS = {
     "biotime": {
@@ -177,6 +203,16 @@ def write_javascript(path, assignments):
     os.replace(temporary, path)
 
 
+def write_json(path, value):
+    """Atomically write a compact JSON artifact."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    temporary = path + ".tmp"
+    with open(temporary, "w", encoding="utf-8") as output:
+        json.dump(value, output, ensure_ascii=False, separators=(",", ":"))
+        output.write("\n")
+    os.replace(temporary, path)
+
+
 def export_world_map(source_path=BOUNDARIES_PATH, output_dir=APP_DATA_DIR):
     """Validate the source GeoJSON and export it for direct browser loading.
 
@@ -201,6 +237,8 @@ def export_world_map(source_path=BOUNDARIES_PATH, output_dir=APP_DATA_DIR):
         if geometry.get("type") not in ("Polygon", "MultiPolygon"):
             raise ValueError("GeoJSON feature %s has unsupported geometry %r" %
                              (feature_id, geometry.get("type")))
+        feature.setdefault("properties", {})["areaKm2"] = round(
+            max(1, geometry_area(geometry)), 2)
         feature_ids.append(str(feature_id))
     duplicates = sorted({feature_id for feature_id in feature_ids
                          if feature_ids.count(feature_id) > 1 and feature_id != "-99"})
@@ -209,6 +247,7 @@ def export_world_map(source_path=BOUNDARIES_PATH, output_dir=APP_DATA_DIR):
 
     output_path = os.path.join(output_dir, "world.js")
     write_javascript(output_path, [("WORLD_GEOJSON", world)])
+    write_json(os.path.join(WALL_DATA_DIR, "world.json"), world)
     print("World map                %3d country features -> app/data/world.js" %
           len(world["features"]))
     return world
@@ -263,6 +302,10 @@ def main():
         ("AGGREGATED_RECORDS", aggregate),
         ("META", meta),
     ])
+    write_json(os.path.join(WALL_DATA_DIR, "datasets.json"), {
+        "datasets": datasets,
+        "meta": meta,
+    })
 
     for key in meta["datasetOrder"]:
         summary = datasets[key]["summary"]
@@ -275,7 +318,7 @@ def main():
           ("Aggregate", aggregate_summary["countries"],
            format(aggregate_summary["records"], ","),
            aggregate_summary["yearMin"], aggregate_summary["yearMax"]))
-    print("Wrote app/data/world.js and app/data/datasets.js")
+    print("Wrote legacy app/data JavaScript and do-app-wall src/data JSON artifacts")
 
 
 if __name__ == "__main__":

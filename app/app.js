@@ -3,27 +3,7 @@
   "use strict";
 
   var datasetOrder = META.datasetOrder;
-  var query = new URLSearchParams(window.location.search);
-  var remoteControl = query.get("remote") === "1";
-  var detailsMode = remoteControl && query.get("details") === "1";
-  var requestedDetailColumns = Number(query.get("columns"));
-  var detailColumnLimit = Number.isInteger(requestedDetailColumns) &&
-    requestedDetailColumns >= 1 && requestedDetailColumns <= 32 ? requestedDetailColumns : 16;
-  var remoteSocket = null;
-  var remoteStateFrame = null, pendingRemoteState = null;
-  var remoteReconnectDelay = 500;
-  var activeCountrySelection = [];
   var focusedCountry = null;
-  var displayScale = 1;
-  function updateDisplayScale() {
-    displayScale = remoteControl
-      ? Math.max(0.75, Math.min(4, Math.min(window.innerWidth / 1920, window.innerHeight / 1080)))
-      : 1;
-    document.documentElement.style.fontSize = (16 * displayScale) + "px";
-  }
-  updateDisplayScale();
-  if (remoteControl) document.body.classList.add("remote-renderer");
-  if (detailsMode) document.body.classList.add("remote-details");
   var scopeDatasets = META.scopeDatasets || [META.scopeDataset];
   var scopeRecords = {};
   scopeDatasets.forEach(function (key) {
@@ -40,6 +20,23 @@
     USA: [39.8, -98.6]
   };
   datasetOrder.forEach(function (key) { state.selected[key] = true; });
+
+  var yearCount = META.yearMax - META.yearMin + 1;
+  var recordPrefixes = {};
+  datasetOrder.forEach(function (key) {
+    recordPrefixes[key] = {};
+    Object.keys(DATASETS[key].records).forEach(function (iso) {
+      var prefix = new Array(yearCount + 1).fill(0);
+      var yearly = DATASETS[key].records[iso];
+      for (var index = 0; index < yearCount; index++) {
+        prefix[index + 1] = prefix[index] + (yearly[String(META.yearMin + index)] || 0);
+      }
+      recordPrefixes[key][iso] = prefix;
+    });
+  });
+  var datasetCountCache = new Map();
+  var countryCountCache = new Map();
+  var scaleCache = new Map();
 
   function selectedKeys() {
     return datasetOrder.filter(function (key) { return state.selected[key]; });
@@ -73,24 +70,28 @@
     return Object.prototype.hasOwnProperty.call(scopeRecords, iso);
   }
 
-  function countInWindow(records, iso) {
-    var yearly = records[iso] || {};
-    return Object.keys(yearly).reduce(function (total, year) {
-      var value = Number(year);
-      return total + (value >= state.yearFrom && value <= state.yearTo ? yearly[year] : 0);
-    }, 0);
-  }
-
   function datasetCount(key, iso) {
     if (!countryInScope(iso)) return 0;
-    return countInWindow(DATASETS[key].records, iso);
+    var cacheKey = key + "|" + iso + "|" + state.yearFrom + "|" + state.yearTo;
+    if (datasetCountCache.has(cacheKey)) return datasetCountCache.get(cacheKey);
+    var prefix = recordPrefixes[key][iso];
+    var count = prefix
+      ? prefix[state.yearTo - META.yearMin + 1] - prefix[state.yearFrom - META.yearMin]
+      : 0;
+    datasetCountCache.set(cacheKey, count);
+    return count;
   }
 
   function countryCount(iso) {
     if (!countryInScope(iso)) return 0;
-    return selectedKeys().reduce(function (total, key) {
+    var keys = selectedKeys();
+    var cacheKey = iso + "|" + state.yearFrom + "|" + state.yearTo + "|" + keys.join(",");
+    if (countryCountCache.has(cacheKey)) return countryCountCache.get(cacheKey);
+    var count = keys.reduce(function (total, key) {
       return total + datasetCount(key, iso);
     }, 0);
+    countryCountCache.set(cacheKey, count);
+    return count;
   }
 
   function seriesCount(series, iso) {
@@ -106,31 +107,9 @@
     }, 0);
   }
 
-  // Approximate land area from the map geometry on a sphere. Density is used only for
-  // cross-country visual comparison; the detail panel continues to report source counts.
-  function ringArea(coordinates) {
-    if (!coordinates || coordinates.length < 3) return 0;
-    var total = 0, radians = Math.PI / 180;
-    for (var index = 0; index < coordinates.length; index++) {
-      var previous = coordinates[(index + coordinates.length - 1) % coordinates.length];
-      var next = coordinates[(index + 1) % coordinates.length];
-      total += (next[0] - previous[0]) * radians * Math.sin(coordinates[index][1] * radians);
-    }
-    return Math.abs(total * 6371.0088 * 6371.0088 / 2);
-  }
-
-  function geometryArea(geometry) {
-    var polygons = geometry.type === "Polygon" ? [geometry.coordinates] : geometry.coordinates;
-    return polygons.reduce(function (total, polygon) {
-      return total + polygon.reduce(function (area, ring, index) {
-        return area + ringArea(ring) * (index === 0 ? 1 : -1);
-      }, 0);
-    }, 0);
-  }
-
   var countryAreas = {};
   WORLD_GEOJSON.features.forEach(function (feature) {
-    countryAreas[feature.id] = Math.max(1, geometryArea(feature.geometry));
+    countryAreas[feature.id] = Math.max(1, feature.properties.areaKm2 || 1);
   });
 
   function perMillionKm2(value, iso) {
@@ -282,8 +261,9 @@
           var right = side === "right";
           var textX = right ? 240 : 160, lineX = right ? 235 : 165;
           var elbowX = right ? 226 : 174;
-          return '<text x="' + textX + '" y="' + (y + 4) + '" text-anchor="' +
-            (right ? "start" : "end") + '">' + escapeHTML(entry.item.label) + '</text>' +
+          var labelClass = right ? "legend-label-right" : "legend-label-left";
+          return '<text class="' + labelClass + '" x="' + textX + '" y="' + (y + 4) + '">' +
+            escapeHTML(entry.item.label) + '</text>' +
             '<path class="legend-arrow" d="M' + lineX + ' ' + y + ' L' + elbowX + ' ' + y +
             ' L' + targetX + ' ' + targetY + '"></path>';
         }).join("");
@@ -298,7 +278,7 @@
 
   var map = L.map("map", {
     worldCopyJump: true, minZoom: 2, maxZoom: 10,
-    attributionControl: false, zoomControl: true
+    zoomSnap: 0.5, attributionControl: false, zoomControl: true
   }).setView([25, 15], 4);
 
   var sidebarToggle = document.getElementById("sidebarToggle");
@@ -342,11 +322,10 @@
       return { fillColor: "#0d141d", fillOpacity: 0.58, color: "#1b2734", weight: 0.45 };
     }
     var count = countryCount(feature.id);
-    var selectedCountry = activeCountrySelection.indexOf(feature.id) !== -1;
     return {
       fillColor: count ? "#263443" : "#1b2530", fillOpacity: count ? 0.42 : 0.34,
-      color: selectedCountry ? "#5ec5ff" : (count ? "#708296" : "#344250"),
-      weight: selectedCountry ? 2.2 : 0.65
+      color: count ? "#708296" : "#344250",
+      weight: 0.65
     };
   }
 
@@ -364,6 +343,16 @@
   }
 
   function recomputeScale() {
+    var cacheKey = state.yearFrom + "|" + state.yearTo + "|" +
+      selectedKeys().join(",") + "|" + (state.groupedDonuts ? "grouped" : "datasets");
+    if (scaleCache.has(cacheKey)) {
+      var cached = scaleCache.get(cacheKey);
+      seriesMaxima = cached.seriesMaxima;
+      datasetMaxima = cached.datasetMaxima;
+      datasetYearRanges = cached.datasetYearRanges;
+      seriesYearRanges = cached.seriesYearRanges;
+      return;
+    }
     seriesMaxima = {}; datasetMaxima = {}; datasetYearRanges = {}; seriesYearRanges = {};
     var series = displaySeries();
     var datasetValues = {}, seriesValues = {}, normalizationCountries = {};
@@ -405,6 +394,12 @@
     series.forEach(function (item) {
       seriesYearRanges[item.id] = positiveRange(seriesValues[item.id]);
     });
+    scaleCache.set(cacheKey, {
+      seriesMaxima: seriesMaxima,
+      datasetMaxima: datasetMaxima,
+      datasetYearRanges: datasetYearRanges,
+      seriesYearRanges: seriesYearRanges
+    });
   }
 
   function seriesAcronym(series) {
@@ -444,18 +439,29 @@
       }
       paths.push('<path d="' + ringPath(sectorStart, sectorEnd) + '" class="sector-outline"></path>');
       var yearCount = state.yearTo - state.yearFrom + 1;
+      var arcPixels = (sectorEnd - sectorStart) * Math.PI / 180 * 27 * size / 60;
+      var visibleBuckets = Math.min(yearCount, Math.max(4, Math.floor(arcPixels / 3)));
+      var yearsPerBucket = Math.ceil(yearCount / visibleBuckets);
       var bucketWidth = (sectorEnd - sectorStart) / yearCount;
-      for (var year = state.yearFrom; year <= state.yearTo; year++) {
-        var count = seriesYearCount(item, feature.id, year);
-        if (!count) continue;
-        var start = sectorStart + (year - state.yearFrom) * bucketWidth;
-        var end = Math.min(sectorEnd, start + Math.max(0.08, bucketWidth - 0.08));
-        paths.push('<path d="' + ringPath(start, end) + '" fill="' +
-          scoreColor(minMaxScore(perMillionKm2(count, feature.id), seriesYearRanges[item.id])) + '" class="bucket"></path>');
+      for (var firstYear = state.yearFrom; firstYear <= state.yearTo; firstYear += yearsPerBucket) {
+        var lastYear = Math.min(state.yearTo, firstYear + yearsPerBucket - 1);
+        var count = 0;
+        for (var year = firstYear; year <= lastYear; year++) {
+          count += seriesYearCount(item, feature.id, year);
+        }
+        var start = sectorStart + (firstYear - state.yearFrom) * bucketWidth;
+        var end = sectorStart + (lastYear - state.yearFrom + 1) * bucketWidth;
+        var annualAverage = count / (lastYear - firstYear + 1);
+        var fill = count
+          ? scoreColor(minMaxScore(perMillionKm2(annualAverage, feature.id), seriesYearRanges[item.id]))
+          : "#283644";
+        var label = firstYear === lastYear ? String(firstYear) : firstYear + "–" + lastYear;
+        paths.push('<path d="' + ringPath(start, end) + '" fill="' + fill +
+          '" class="bucket' + (count ? '' : ' empty-bucket') + '"><title>' + label + ': ' +
+          formatNumber(count) + ' records</title></path>');
       }
     });
-    var fontSize = Math.max(4 * displayScale,
-      Math.min(9 * displayScale, Math.round(size * 0.105)));
+    var fontSize = Math.max(4, Math.min(9, Math.round(size * 0.105)));
     return '<div class="record-donut" style="--size:' + size + 'px;--font:' + fontSize + 'px">' +
       '<svg viewBox="0 0 60 60" aria-hidden="true"><circle cx="30" cy="30" r="28" class="backing"></circle>' +
       paths.join("") + labels.join("") + '<circle cx="30" cy="30" r="13" class="centre"></circle></svg><span>' +
@@ -463,11 +469,13 @@
   }
 
   var recordMarkers = {};
+  var recordMarkerSignatures = {};
   function markerSize() {
     var zoom = map.getZoom();
     var size = 30 + (zoom - 2) * 16;
     if (zoom > 4) size += (zoom - 4) * 12;
-    return Math.max(30, Math.min(180, size)) * displayScale;
+    if (state.yearlyHistograms) size *= 1.3;
+    return Math.max(state.yearlyHistograms ? 52 : 30, Math.min(state.yearlyHistograms ? 220 : 180, size));
   }
 
   function renderDonuts() {
@@ -476,20 +484,22 @@
       var feature = entry.feature, countryLayer = entry.layer;
       if (!countryInScope(feature.id)) return;
       var focused = focusedCountry === feature.id;
-      var selected = activeCountrySelection.indexOf(feature.id) !== -1;
-      var enlarged = focused || selected;
+      var enlarged = focused;
       // Slice acronyms are rendered at 110px and above. A selected wheel therefore gets a
       // guaranteed readable size even at low map zoom, while retaining a cap on dense displays.
       var size = enlarged
-        ? Math.min(280 * displayScale, Math.max(150 * displayScale, baseSize * 1.9))
+        ? Math.min(280, Math.max(150, baseSize * 1.9))
         : baseSize;
-      var icon = L.divIcon({
-        className: "record-div-icon" + (enlarged ? " selected-record-icon" : ""),
-        html: donutHTML(feature, size),
-        iconSize: [size, size], iconAnchor: [size / 2, size / 2]
-      });
       var marker = recordMarkers[markerIndex];
+      var iconSignature = size + "|" + state.yearFrom + "|" + state.yearTo + "|" +
+        selectedKeys().join(",") + "|" + state.groupedDonuts + "|" + state.yearlyHistograms +
+        "|" + focused;
       if (!marker) {
+        var icon = L.divIcon({
+          className: "record-div-icon" + (enlarged ? " selected-record-icon" : ""),
+          html: donutHTML(feature, size),
+          iconSize: [size, size], iconAnchor: [size / 2, size / 2]
+        });
         var position = MARKER_POSITIONS[feature.id] || countryLayer.getBounds().getCenter();
         marker = L.marker(position, { icon: icon, riseOnHover: true }).addTo(map);
         marker.on("click", function () { handleCountrySelection(feature); });
@@ -497,10 +507,18 @@
           className: "ctip leaflet-tooltip-own", direction: "top", opacity: 1
         });
         recordMarkers[markerIndex] = marker;
-      } else marker.setIcon(icon);
+        recordMarkerSignatures[markerIndex] = iconSignature;
+      } else if (recordMarkerSignatures[markerIndex] !== iconSignature) {
+        marker.setIcon(L.divIcon({
+          className: "record-div-icon" + (enlarged ? " selected-record-icon" : ""),
+          html: donutHTML(feature, size),
+          iconSize: [size, size], iconAnchor: [size / 2, size / 2]
+        }));
+        recordMarkerSignatures[markerIndex] = iconSignature;
+      }
       // Leaflet adds this offset to its latitude-derived marker z-index. Keep the focused wheel in
-      // a dedicated top tier and shared selections above every ordinary or hover-raised marker.
-      marker.setZIndexOffset(focused ? 200000 : selected ? 100000 + markerIndex : 0);
+      // a dedicated top tier above every ordinary or hover-raised marker.
+      marker.setZIndexOffset(focused ? 200000 : 0);
     });
   }
   map.on("zoomend", renderDonuts);
@@ -628,7 +646,9 @@
         escapeHTML(series.label) +
         '</span><small class="legend-maximum">' +
         (series.selected ? formatNumber(Math.round(seriesMaxima[series.id])) + " / million km² max" : "off") + '</small></div>';
-    }).join("") + '<details class="count-unit-guide"><summary>What does each count mean?</summary>' +
+    }).join("") + (state.yearlyHistograms
+      ? '<p class="timeline-note">Each sector runs from the first selected year to the last. Individual years are shown when space allows; on smaller donuts adjacent years are combined into wider, readable marks.</p>'
+      : '') + '<details class="count-unit-guide"><summary>What does each count mean?</summary>' +
       datasetOrder.map(function (key) {
         var dataset = DATASETS[key];
         return '<div><b><i style="background:' + dataset.color + '"></i>' + escapeHTML(dataset.name) +
@@ -680,146 +700,56 @@
     if (params.has("group")) state.groupedDonuts = params.get("group") === "categories";
   }
 
+  var renderSignatures = {};
+  var redrawFrame = null;
   function redraw() {
-    recomputeScale();
-    countries.setStyle(countryStyle);
-    renderDonuts();
-    renderHistogram();
-    renderSummary();
-    updateYearControls();
+    var selected = selectedKeys().join(",");
+    var dataSignature = state.yearFrom + "|" + state.yearTo + "|" + selected;
+    var seriesSignature = dataSignature + "|" + state.groupedDonuts;
+    var donutSignature = seriesSignature + "|" + state.yearlyHistograms + "|" + focusedCountry;
+    var controlsSignature = state.yearFrom + "|" + state.yearTo + "|" +
+      state.groupedDonuts + "|" + state.yearlyHistograms;
+
+    if (renderSignatures.scale !== seriesSignature) {
+      recomputeScale();
+      renderSignatures.scale = seriesSignature;
+    }
+    if (renderSignatures.countries !== dataSignature) {
+      countries.setStyle(countryStyle);
+      renderSignatures.countries = dataSignature;
+    }
+    if (renderSignatures.donuts !== donutSignature) {
+      renderDonuts();
+      renderSignatures.donuts = donutSignature;
+    }
+    if (renderSignatures.histogram !== dataSignature) {
+      renderHistogram();
+      renderSignatures.histogram = dataSignature;
+    }
+    if (renderSignatures.summary !== donutSignature) {
+      renderSummary();
+      renderSignatures.summary = donutSignature;
+    }
+    if (renderSignatures.controls !== controlsSignature) {
+      updateYearControls();
+      renderSignatures.controls = controlsSignature;
+    }
     syncHash();
-    if (detailsMode) {
-      renderCountryComparison(activeCountrySelection);
-    } else if (document.getElementById("detail").style.display === "block") {
+    if (renderSignatures.detail !== seriesSignature &&
+        document.getElementById("detail").style.display === "block") {
       var iso = document.getElementById("detail").dataset.iso;
       var feature = WORLD_GEOJSON.features.find(function (item) { return item.id === iso; });
       if (feature) openDetail(feature);
     }
+    renderSignatures.detail = seriesSignature;
   }
 
-  function applyRemoteState(next) {
-    if (!next || typeof next !== "object") return;
-    var from = Number(next.yearFrom), to = Number(next.yearTo);
-    if (Number.isInteger(from) && Number.isInteger(to)) {
-      state.yearFrom = Math.max(META.yearMin, Math.min(META.yearMax, from));
-      state.yearTo = Math.max(state.yearFrom, Math.min(META.yearMax, to));
-    }
-    if (Array.isArray(next.selected)) {
-      datasetOrder.forEach(function (key) { state.selected[key] = next.selected.indexOf(key) !== -1; });
-    }
-    if (typeof next.yearlyHistograms === "boolean") state.yearlyHistograms = next.yearlyHistograms;
-    if (typeof next.groupedDonuts === "boolean") state.groupedDonuts = next.groupedDonuts;
-    var previousCountries = activeCountrySelection.join(",");
-    if (Array.isArray(next.countries)) {
-      activeCountrySelection = next.countries.filter(function (iso, index, values) {
-        return typeof iso === "string" && values.indexOf(iso) === index &&
-          WORLD_GEOJSON.features.some(function (feature) { return feature.id === iso; });
-      });
-    }
-    redraw();
-    if (!detailsMode && activeCountrySelection.length &&
-        previousCountries !== activeCountrySelection.join(",")) focusCountries(activeCountrySelection);
-  }
-
-  function focusCountries(selection) {
-    var bounds = null;
-    countryEntries.forEach(function (entry) {
-      if (selection.indexOf(entry.feature.id) === -1) return;
-      if (!bounds) bounds = L.latLngBounds(entry.layer.getBounds());
-      else bounds.extend(entry.layer.getBounds());
+  function scheduleRedraw() {
+    if (redrawFrame !== null) return;
+    redrawFrame = window.requestAnimationFrame(function () {
+      redrawFrame = null;
+      redraw();
     });
-    if (bounds && bounds.isValid()) {
-      map.fitBounds(bounds, {
-        maxZoom: selection.length === 1 ? 5 : 6,
-        padding: [20 * displayScale, 20 * displayScale], animate: false
-      });
-    }
-  }
-
-  function queueRemoteState(next) {
-    pendingRemoteState = next;
-    if (remoteStateFrame !== null) return;
-    remoteStateFrame = window.requestAnimationFrame(function () {
-      remoteStateFrame = null;
-      var latest = pendingRemoteState; pendingRemoteState = null;
-      applyRemoteState(latest);
-    });
-  }
-
-  function applyRemoteNavigation(message) {
-    if (message.action === "zoomIn") { map.zoomIn(1, { animate: false }); return; }
-    if (message.action === "zoomOut") { map.zoomOut(1, { animate: false }); return; }
-    if (message.action === "pan") {
-      var offsets = { north: [0, -160], south: [0, 160], west: [-200, 0], east: [200, 0] };
-      if (offsets[message.value]) map.panBy(offsets[message.value], { animate: false });
-      return;
-    }
-    if (message.action === "region") {
-      var region = regions.find(function (item) { return item.name === message.value; });
-      if (region) {
-        if (region.name === "World") map.setView([25, 15], 4, { animate: false });
-        else map.fitBounds(region.bounds, { animate: false });
-      }
-      return;
-    }
-    if (message.action === "country" && typeof message.value === "string") {
-      var feature = WORLD_GEOJSON.features.find(function (item) { return item.id === message.value; });
-      var entry = feature && countryEntries.find(function (item) { return item.feature === feature; });
-      if (entry && !detailsMode) {
-        map.fitBounds(entry.layer.getBounds(), { maxZoom: 5, animate: false });
-      }
-      if (feature && detailsMode) openDetail(feature);
-    }
-  }
-
-  function connectRemoteController() {
-    var explicitUrl = query.get("ws");
-    var appMarker = location.pathname.indexOf("/app/");
-    var applicationPath = appMarker === -1 ? "/" : location.pathname.slice(0, appMarker + 1);
-    var defaultSocketUrl = new URL(applicationPath + "ws", location.origin);
-    defaultSocketUrl.protocol = location.protocol === "https:" ? "wss:" : "ws:";
-    var url = explicitUrl || defaultSocketUrl.href;
-    var socket;
-    try { socket = new WebSocket(url); remoteSocket = socket; } catch (error) {
-      setRemoteConnection("error", "Connection failed — retrying");
-      window.setTimeout(connectRemoteController, remoteReconnectDelay); return;
-    }
-    setRemoteConnection("", "Connecting…");
-    socket.onopen = function () {
-      setRemoteConnection("connected", "Connected · waiting for controller");
-      socket.send(JSON.stringify({ type: "hello", role: detailsMode ? "details" : "renderer" }));
-      sendRemoteView();
-    };
-    socket.onmessage = function (event) {
-      try {
-        var message = JSON.parse(event.data);
-        if (message.type === "reload") { location.reload(); return; }
-        if (message.type === "state") queueRemoteState(message.state);
-        if (message.type === "navigation") applyRemoteNavigation(message);
-        if (message.type === "peers") setRemoteConnection("connected",
-          message.controllers ? "Connected · controller online" : "Connected · waiting for controller");
-      } catch (error) { /* Ignore malformed relay messages. */ }
-    };
-    socket.onerror = function () { setRemoteConnection("error", "Connection interrupted"); };
-    socket.onclose = function () {
-      setRemoteConnection("error", "Disconnected · retrying");
-      window.setTimeout(connectRemoteController, remoteReconnectDelay);
-    };
-  }
-
-  function setRemoteConnection(kind, message) {
-    var element = document.getElementById("remoteConnection");
-    if (!element) return;
-    element.className = "remote-connection " + kind;
-    element.querySelector("span").textContent = message;
-  }
-
-  function sendRemoteView() {
-    if (!remoteControl || detailsMode || !remoteSocket || remoteSocket.readyState !== WebSocket.OPEN) return;
-    var centre = map.getCenter();
-    remoteSocket.send(JSON.stringify({
-      type: "view", zoom: map.getZoom(), lat: centre.lat, lng: centre.lng
-    }));
   }
 
   function renderFilters() {
@@ -842,6 +772,7 @@
       categoryCheckbox.indeterminate = selectedCount > 0 && selectedCount < keys.length;
       categoryCheckbox.onchange = function () {
         keys.forEach(function (key) { state.selected[key] = categoryCheckbox.checked; });
+        renderFilters();
         redraw();
       };
       group.appendChild(categoryLabel);
@@ -857,7 +788,11 @@
           '<span class="count">' + formatNumber(dataset.scopeSummary.records) + '</span>';
         var checkbox = label.querySelector("input");
         checkbox.checked = state.selected[key];
-        checkbox.onchange = function () { state.selected[key] = checkbox.checked; redraw(); };
+        checkbox.onchange = function () {
+          state.selected[key] = checkbox.checked;
+          renderFilters();
+          redraw();
+        };
         datasetsContainer.appendChild(label);
       });
       group.appendChild(datasetsContainer);
@@ -897,7 +832,6 @@
     yearlyBucketsToggle.title = state.yearlyHistograms
       ? "Currently showing annual time bins — switch to the aggregated view"
       : "Currently showing the aggregated view — split each dataset sector into annual time bins";
-    yearlyBucketsToggle.querySelector("span").textContent = state.yearlyHistograms ? "🗓" : "x̄";
     groupingToggle.classList.toggle("active", state.groupedDonuts);
     groupingToggle.setAttribute("aria-pressed", state.groupedDonuts);
     groupingToggle.setAttribute("aria-label", state.groupedDonuts
@@ -905,16 +839,14 @@
     groupingToggle.title = state.groupedDonuts
       ? "Currently grouped by category — switch to individual dataset sectors"
       : "Currently showing individual datasets — group radial sectors by category";
-    groupingToggle.querySelector("span").textContent = state.groupedDonuts ? "⊞" : "◫";
     document.getElementById("yearRangeVal").textContent = state.yearFrom + "–" + state.yearTo;
-    renderFilters();
   }
 
   function setHandleYear(handle, year) {
     year = Math.max(META.yearMin, Math.min(META.yearMax, Math.round(year)));
     if (handle === yearFrom) state.yearFrom = Math.min(year, state.yearTo);
     else state.yearTo = Math.max(year, state.yearFrom);
-    redraw();
+    scheduleRedraw();
   }
 
   function yearAtPointer(clientX) {
@@ -942,11 +874,11 @@
     handle.addEventListener("pointercancel", finishDrag);
     handle.addEventListener("keydown", function (event) {
       var current = handle === yearFrom ? state.yearFrom : state.yearTo;
-      var next = current;
-      if (event.key === "ArrowLeft" || event.key === "ArrowDown") next--;
-      else if (event.key === "ArrowRight" || event.key === "ArrowUp") next++;
-      else if (event.key === "PageDown") next -= 10;
-      else if (event.key === "PageUp") next += 10;
+      var next;
+      if (event.key === "ArrowLeft" || event.key === "ArrowDown") next = current - 1;
+      else if (event.key === "ArrowRight" || event.key === "ArrowUp") next = current + 1;
+      else if (event.key === "PageDown") next = current - 10;
+      else if (event.key === "PageUp") next = current + 10;
       else if (event.key === "Home") next = META.yearMin;
       else if (event.key === "End") next = META.yearMax;
       else return;
@@ -954,30 +886,28 @@
       setHandleYear(handle, next);
     });
   }
-  if (!remoteControl) {
-    bindHandle(yearFrom); bindHandle(yearTo);
-    yearRangeControl.addEventListener("pointerdown", function (event) {
-      if (event.target === yearFrom || event.target === yearTo) return;
-      var year = yearAtPointer(event.clientX);
-      var handle = Math.abs(year - state.yearFrom) <= Math.abs(year - state.yearTo) ? yearFrom : yearTo;
-      handle.focus();
-      setHandleYear(handle, year);
-    });
-    yearlyBucketsToggle.onclick = function () {
-      state.yearlyHistograms = !state.yearlyHistograms;
-      redraw();
-    };
-    groupingToggle.onclick = function () {
-      state.groupedDonuts = !state.groupedDonuts;
-      redraw();
-    };
-    document.getElementById("selectAll").onclick = function () {
-      datasetOrder.forEach(function (key) { state.selected[key] = true; }); redraw();
-    };
-    document.getElementById("selectNone").onclick = function () {
-      datasetOrder.forEach(function (key) { state.selected[key] = false; }); redraw();
-    };
-  }
+  bindHandle(yearFrom); bindHandle(yearTo);
+  yearRangeControl.addEventListener("pointerdown", function (event) {
+    if (event.target === yearFrom || event.target === yearTo) return;
+    var year = yearAtPointer(event.clientX);
+    var handle = Math.abs(year - state.yearFrom) <= Math.abs(year - state.yearTo) ? yearFrom : yearTo;
+    handle.focus();
+    setHandleYear(handle, year);
+  });
+  yearlyBucketsToggle.onclick = function () {
+    state.yearlyHistograms = !state.yearlyHistograms;
+    redraw();
+  };
+  groupingToggle.onclick = function () {
+    state.groupedDonuts = !state.groupedDonuts;
+    redraw();
+  };
+  document.getElementById("selectAll").onclick = function () {
+    datasetOrder.forEach(function (key) { state.selected[key] = true; }); renderFilters(); redraw();
+  };
+  document.getElementById("selectNone").onclick = function () {
+    datasetOrder.forEach(function (key) { state.selected[key] = false; }); renderFilters(); redraw();
+  };
 
   function yearStrip(key, iso) {
     var dataset = DATASETS[key];
@@ -1028,8 +958,7 @@
     return '<section class="category-detail"><h3><span class="category-swatches">' + swatches + '</span>' +
       escapeHTML(series.label) + '</h3><p>' + formatNumber(seriesCount(series, iso)) +
       ' records in this window</p>' + seriesYearStrip(series, iso) +
-      '<details class="dataset-breakdown"' + (remoteControl ? ' open' : '') +
-      '><summary>Show dataset details</summary>' +
+      '<details class="dataset-breakdown"><summary>Show dataset details</summary>' +
       keys.map(function (key) { return datasetDetailHTML(key, iso, true); }).join("") + '</details></section>';
   }
 
@@ -1076,37 +1005,7 @@
     panel.style.display = "block";
   }
 
-  function renderCountryComparison(selection) {
-    var panel = document.getElementById("detail");
-    panel.style.display = "block";
-    delete panel.dataset.iso;
-    var features = selection.map(function (iso) {
-      return WORLD_GEOJSON.features.find(function (feature) { return feature.id === iso; });
-    }).filter(Boolean).sort(function (first, second) {
-      return first.properties.name.localeCompare(second.properties.name);
-    });
-    document.getElementById("detailName").textContent = features.length > 1
-      ? "Country comparison" : features.length ? features[0].properties.name : "Country details";
-    document.getElementById("detailMeta").textContent = features.length
-      ? features.length + " selected countr" + (features.length === 1 ? "y" : "ies") +
-        " · " + state.yearFrom + "–" + state.yearTo
-      : "Waiting for a country selection";
-    document.getElementById("detailBody").innerHTML = features.length
-      ? '<div class="country-comparison" style="--max-country-columns:' + detailColumnLimit + '">' +
-        features.map(function (feature) {
-          return '<section class="country-column"><h2>' + escapeHTML(feature.properties.name) +
-            '</h2><div class="country-column-meta">' + formatNumber(countryCount(feature.id)) +
-            ' selected records</div>' + countryDetailHTML(feature.id) + '</section>';
-        }).join("") + '</div>'
-      : '<div class="empty">Select countries from the controller or click them on the map.</div>';
-  }
   function handleCountrySelection(feature) {
-    if (remoteControl && !detailsMode) {
-      if (remoteSocket && remoteSocket.readyState === WebSocket.OPEN) {
-        remoteSocket.send(JSON.stringify({ type: "selection", country: feature.id }));
-      }
-      return;
-    }
     focusedCountry = feature.id;
     renderDonuts();
     openDetail(feature);
@@ -1207,25 +1106,7 @@
     if (event.key === "Escape") { setLicences(false); setCoverage(false); }
   });
 
-  if (!remoteControl) loadHash();
+  loadHash();
+  renderFilters();
   redraw();
-  if (remoteControl) {
-    var resizeFrame = null;
-    window.addEventListener("resize", function () {
-      if (resizeFrame !== null) return;
-      resizeFrame = window.requestAnimationFrame(function () {
-        resizeFrame = null; updateDisplayScale(); map.invalidateSize(); redraw();
-      });
-    });
-    if (!detailsMode) map.on("zoomend moveend", sendRemoteView);
-    if (detailsMode) {
-      var detailPanel = document.getElementById("detail");
-      detailPanel.style.display = "block";
-      document.getElementById("detailName").textContent = "Country details";
-      document.getElementById("detailMeta").textContent = "Waiting for a country selection";
-      document.getElementById("detailBody").innerHTML =
-        '<div class="empty">Choose a country from the controller or click one on the map.</div>';
-    }
-    connectRemoteController();
-  }
 })();

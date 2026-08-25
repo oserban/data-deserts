@@ -1,13 +1,18 @@
-import { build, transform } from "esbuild";
+import { transform } from "esbuild";
 import { ZipArchive } from "archiver";
+import { createHash } from "node:crypto";
 import { createWriteStream } from "node:fs";
-import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
 const app = resolve(root, "app");
 const output = resolve(root, "dist");
 const archivePath = resolve(root, "data-deserts-vercel.zip");
+const sourcePath = (...parts) => parts.join("/");
+const leafletCssPath = sourcePath("vendor", "leaflet.css");
+const leafletJsPath = sourcePath("vendor", "leaflet.js");
+const appCssPath = sourcePath("styles", "app.css");
 const required = [
   "data/world.js",
   "data/datasets.js",
@@ -29,33 +34,62 @@ await rm(output, { recursive: true, force: true });
 await mkdir(resolve(output, "assets"), { recursive: true });
 await mkdir(resolve(output, "vendor"), { recursive: true });
 
-const bundle = await transform(sources.join("\n;\n"), {
-  legalComments: "none",
-  minify: true,
-  minifyIdentifiers: true,
-  minifySyntax: true,
-  minifyWhitespace: true,
-  sourcefile: "data-deserts.bundle.js",
-  sourcemap: false,
-  target: ["es2018"]
-});
-await writeFile(resolve(output, "assets/app.min.js"), bundle.code);
+function fingerprint(content) {
+  return createHash("sha256").update(content).digest("hex").slice(0, 12);
+}
 
-await build({
-  entryPoints: [resolve(app, "styles/app.css")],
-  legalComments: "none",
-  minify: true,
-  outfile: resolve(output, "assets/app.min.css"),
-  sourcemap: false
-});
+async function writeHashed(directory, name, extension, content) {
+  const filename = `${name}.${fingerprint(content)}.${extension}`;
+  await writeFile(resolve(output, directory, filename), content);
+  return `${directory}/${filename}`;
+}
+
+const [worldSource, datasetsSource, appSource] = sources;
+const minifyJavaScript = async (source, sourcefile) => (await transform(source, {
+  legalComments: "none", minify: true, sourcefile, sourcemap: false, target: ["es2018"]
+})).code;
+
+const worldAsset = await writeHashed("assets", "world", "js",
+  await minifyJavaScript(worldSource, "world.js"));
+const datasetsAsset = await writeHashed("assets", "datasets", "js",
+  await minifyJavaScript(datasetsSource, "datasets.js"));
+const appAsset = await writeHashed("assets", "app", "js",
+  await minifyJavaScript(appSource, "app.js"));
+const cssAsset = await writeHashed("assets", "app", "css", (await transform(
+  await readFile(resolve(app, appCssPath), "utf8"),
+  { loader: "css", legalComments: "none", minify: true, sourcefile: "app.css" }
+)).code);
+const leafletCssAsset = await writeHashed("vendor", "leaflet", "css",
+  await readFile(resolve(app, leafletCssPath)));
+const leafletJsAsset = await writeHashed("vendor", "leaflet", "js",
+  await readFile(resolve(app, leafletJsPath)));
 
 let html = await readFile(resolve(app, "index.html"), "utf8");
 html = html
-  .replace('<link rel="stylesheet" href="styles/app.css" />', '<link rel="stylesheet" href="assets/app.min.css" />')
-  .replace(/\n  <script src="data\/world\.js"><\/script>\n  <script src="data\/datasets\.js"><\/script>\n  <script src="app\.js"><\/script>/,
-    '\n  <script src="assets/app.min.js"></script>');
+  .replace(`<link rel="stylesheet" href="${leafletCssPath}" />`, `<link rel="stylesheet" href="${leafletCssAsset}" />`)
+  .replace(`<link rel="stylesheet" href="${appCssPath}" />`, `<link rel="stylesheet" href="${cssAsset}" />`)
+  .replace(`<script src="${leafletJsPath}"></script>`, `<script src="${leafletJsAsset}"></script>`)
+  .replace(/\n[ ]{2}<script src="data\/world\.js"><\/script>\n[ ]{2}<script src="data\/datasets\.js"><\/script>\n[ ]{2}<script src="app\.js"><\/script>/,
+    `\n  <script src="${worldAsset}"></script>` +
+    `\n  <script src="${datasetsAsset}"></script>` +
+    `\n  <script src="${appAsset}"></script>`);
 await writeFile(resolve(output, "index.html"), html);
-await cp(resolve(app, "vendor"), resolve(output, "vendor"), { recursive: true });
+await writeFile(resolve(output, "_headers"), [
+  "/assets/*",
+  "  Cache-Control: public, max-age=31536000, immutable",
+  "/vendor/*",
+  "  Cache-Control: public, max-age=31536000, immutable",
+  "/index.html",
+  "  Cache-Control: no-cache",
+  ""
+].join("\n"));
+await writeFile(resolve(output, "vercel.json"), JSON.stringify({
+  headers: [
+    { source: "/assets/(.*)", headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }] },
+    { source: "/vendor/(.*)", headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }] },
+    { source: "/index.html", headers: [{ key: "Cache-Control", value: "no-cache" }] }
+  ]
+}, null, 2) + "\n");
 
 await rm(archivePath, { force: true });
 await new Promise((resolveArchive, rejectArchive) => {
