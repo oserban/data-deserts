@@ -29,15 +29,15 @@ export const DATASET_REFERENCE: Record<string, DatasetReference> = {
         title: 'Projecting Responses of Ecological Diversity In Changing Terrestrial Systems',
         provider: 'Natural History Museum, London',
         description:
-            'Terrestrial biodiversity sampling sites assigned to the midpoint year of sampling. Sites are counted to avoid inflating intensively sampled locations.',
+            'Sites from 2016 V1.1 and the November 2022 additions, assigned to the sampling midpoint year. Source/study/block/site IDs are deduplicated across releases.',
         licence: 'Creative Commons Attribution–NonCommercial 4.0 International (CC BY-NC 4.0).',
-        source: 'https://data.nhm.ac.uk/dataset/the-2016-release-of-the-predicts-database-v1-1'
+        source: 'https://data.nhm.ac.uk/dataset/the-2016-release-of-the-predicts-database-v1-1 · https://data.nhm.ac.uk/dataset/release-of-data-added-to-the-predicts-database-november-2022'
     },
     gbif: {
         title: 'Global Biodiversity Information Facility',
         provider: 'GBIF network and contributing data publishers',
         description:
-            'Filtered modern biodiversity occurrence records with coordinates, no flagged geospatial issue, and present status.',
+            'Human observations, machine observations and living specimens with coordinates, no flagged geospatial issues and present status. All other basis-of-record types are excluded.',
         licence:
             'Record-level sources use CC0, CC BY 4.0, or CC BY-NC 4.0; applicable attribution and non-commercial terms must be followed.',
         source: 'https://www.gbif.org/occurrence/search'
@@ -55,7 +55,7 @@ export const DATASET_REFERENCE: Record<string, DatasetReference> = {
         title: 'Demographic and Health Surveys',
         provider: 'The DHS Program, implemented by ICF',
         description:
-            'Interviewed women plus interviewed men reported for each survey. DHS coverage defines the countries displayed by Data Deserts.',
+            'Unique completed DHS Program surveys with published indicators, counted once per survey ID. Nutrition includes any nutrition topic: feeding practices, dietary diversity, food insecurity, anthropometry, anemia, and micronutrients. Highlighting uses survey topics or published nutrition indicators.',
         licence:
             'Access is project-specific under DHS terms. DHS microdata must not be redistributed or exposed through a data tool.',
         source: 'https://api.dhsprogram.com/'
@@ -64,7 +64,7 @@ export const DATASET_REFERENCE: Record<string, DatasetReference> = {
         title: 'Multiple Indicator Cluster Surveys',
         provider: 'UNICEF',
         description:
-            'Interviewed women plus interviewed men where individual questionnaire files are available; roster and child files are excluded.',
+            'Women’s and men’s interview records where individual questionnaire files are available; household and child files are excluded. Counts do not establish unique people across surveys.',
         licence:
             'UNICEF and survey-specific access, use, acknowledgement, and citation conditions apply.',
         source: 'https://mics.unicef.org/surveys'

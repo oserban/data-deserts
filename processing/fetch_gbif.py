@@ -2,7 +2,8 @@
 """Fetch cleaned GBIF occurrence counts by ISO3 country and observation year.
 
 The output uses the BioTIME shape: ``{"ARG": {"1990": 123, ...}}``.
-Defaults focus on modern wild animals. Use ``--include-plants`` to add plants.
+Defaults focus on modern animal observations and living specimens.
+Use ``--include-plants`` to add plants.
 
 Install once and run from the repository root:
 
@@ -24,16 +25,20 @@ DEFAULT_OUTPUT = os.path.join(DATA_DIR, "gbif.json")
 DEFAULT_REPORT = os.path.join(DATA_DIR, "gbif_report.json")
 COUNTRY_ENUMERATION_URL = "https://api.gbif.org/v1/enumeration/country"
 
-# Field evidence and material originating from organisms. Fossils, living
-# specimens, and citations that need not represent a distinct observation are
-# deliberately absent.
+# Explicit researcher-approved allowlist. All other basis types are excluded,
+# including preserved museum specimens and generic/unspecified occurrences.
 ALLOWED_BASIS_OF_RECORD = [
     "HUMAN_OBSERVATION",
     "MACHINE_OBSERVATION",
+    "LIVING_SPECIMEN",
+]
+EXCLUDED_BASIS_OF_RECORD = [
     "OBSERVATION",
     "PRESERVED_SPECIMEN",
     "MATERIAL_SAMPLE",
     "OCCURRENCE",
+    "FOSSIL_SPECIMEN",
+    "MATERIAL_CITATION",
 ]
 
 
@@ -237,7 +242,7 @@ def main():
         "hasCoordinate": True, "hasGeospatialIssue": False,
         "occurrenceStatus": "PRESENT",
         "basisOfRecordIncluded": ALLOWED_BASIS_OF_RECORD,
-        "basisOfRecordExcluded": ["FOSSIL_SPECIMEN", "LIVING_SPECIMEN"],
+        "basisOfRecordExcluded": EXCLUDED_BASIS_OF_RECORD,
         "yearMin": args.year_min, "yearMax": args.year_max,
     }
     metadata = {
@@ -246,8 +251,8 @@ def main():
         "generatedAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "countries": len(totals), "records": record_total, "filters": filters,
         "wildOccurrenceLimitation": (
-            "GBIF has no universal captive/wild search flag; LIVING_SPECIMEN is excluded "
-            "and only field-evidence/material basis types are included."),
+            "Basis-of-record filtering does not establish wild or native status; "
+            "LIVING_SPECIMEN can include captive or cultivated organisms."),
     }
     write_json_atomic(args.output, totals)
     write_json_atomic(args.report,

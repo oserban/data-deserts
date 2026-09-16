@@ -49,7 +49,7 @@ allowed for territories without an assigned ISO3 code. The exporter wraps that d
 `window.WORLD_GEOJSON` in `app/data/world.js`, allowing the static app to work when opened directly
 through `file://` without fetching a separate GeoJSON resource.
 
-The DHS participant dataset defines the app's country scope. Records from MICS and the ecology
+The DHS survey dataset defines the app's country scope. Records from MICS and the ecology
 datasets are visualized only for mapped countries covered by DHS. A dataset with no records in an
 in-scope country is retained as missing rather than changing the country scope. Separate source
 records remain intact, while the generated combined aggregate and each dataset's `scopeSummary` use
@@ -107,20 +107,47 @@ largest member.
 
 ## Build yearly PREDICTS site counts
 
-Fetch site summaries from the Natural History Museum's public datastore and aggregate them by the
-year of each site's sampling midpoint:
+Fetch site summaries for both **2016 V1.1** and the **November 2022 additions** from
+NHM's public datastore. Both are assigned to their sampling midpoint year, not their release year:
 
 ```sh
 python3 processing/fetch_predicts.py
 ```
 
-This writes `processing/data/predicts.json`. It counts sampling sites rather than species-level
-measurements, preventing species-rich or intensively sampled sites from artificially inflating
-geographic coverage. For a repeatable offline build, download the `sites.zip` resource from the
-[PREDICTS V1.1 dataset page](https://data.nhm.ac.uk/dataset/the-2016-release-of-the-predicts-database-v1-1)
-and use `--input /path/to/sites.zip`.
+This writes `processing/data/predicts.json` and per-release provenance in `predicts_report.json`.
+Each release is validated separately before merging. Counts use the `SSBS` source/study/block/site
+identifier; exact duplicate sites are counted once and conflicting coordinates or dates fail the
+build for review. Distinct studies at the same coordinates remain distinct sites. Species-level
+measurements are not counted separately. Invalid dates/coordinates and sites outside the project
+boundaries are reported separately. Both app exports retain the shared DHS timeline cutoff.
 
-## Build yearly DHS participant counts
+The Python JSON/CSV path uses actual text labels and has no R factor codes or unused factor levels
+to combine. It therefore avoids the unused-level issue addressed by `droplevels()`; it does not
+claim to execute an R function on CSV/JSON. If preparing CSV files from RDS, clean **each release**
+first, before combining:
+
+```r
+sites_2016 <- droplevels(readRDS("sites-2016.rds"))
+sites_2022 <- droplevels(readRDS("sites-2022.rds"))
+write.csv(sites_2016, "sites-2016.csv", row.names = FALSE)
+write.csv(sites_2022, "sites-2022.csv", row.names = FALSE)
+```
+
+For an offline build, download the site-summary CSV/ZIP resources from the
+[2016 V1.1 page](https://data.nhm.ac.uk/dataset/the-2016-release-of-the-predicts-database-v1-1) and
+[November 2022 page](https://data.nhm.ac.uk/dataset/release-of-data-added-to-the-predicts-database-november-2022):
+
+```sh
+python3 processing/fetch_predicts.py --input sites-2016.zip --input-2022 sites-2022.zip
+```
+
+`--input` overrides only V1.1; `--input-2022` overrides only the additions. Any omitted release is
+fetched from the API. ZIPs with multiple CSVs require `--zip-member` / `--zip-member-2022` rather
+than guessing which file is the site summary. Site summaries must contain `SSBS`, `Latitude`,
+`Longitude` and `Sample_midpoint` columns. The app build rejects missing/inconsistent provenance
+or an old single-release aggregate; rerun the fetcher when migrating an existing checkout.
+
+## Build yearly DHS survey counts
 
 Fetch every survey and the official DHS-to-ISO3 country mapping from the DHS Program API:
 
@@ -128,11 +155,28 @@ Fetch every survey and the official DHS-to-ISO3 country mapping from the DHS Pro
 python3 processing/fetch_dhs.py
 ```
 
-This writes `processing/data/dhs.json` in the same `{ISO3: {year: count}}` format as BioTIME.
-Participants are defined as interviewed women plus interviewed men where those API fields are
-available; household counts are not treated as people. `processing/data/dhs_report.json` retains
-every survey's ID, type, women, men, household count, total known participants, and completeness
-status. `build_data.py` includes this output in the Public Health category.
+This writes `processing/data/dhs.json` as `{ISO3: {principal_year: survey_count}}`.
+Each completed DHS Program survey with published indicator data counts once by `SurveyId`,
+including DHS, AIS and MIS surveys. Interview and household sample counts are kept separately
+in `dhs_report.json` for provenance and never contribute to coverage totals.
+
+Nutrition means **any nutrition topic**, including feeding practices, dietary diversity, food
+insecurity, anthropometry, anemia and micronutrients. Evidence is the union of the official
+nutrition-related survey characteristics and published indicators under the API's `Child Nutrition`
+and `Adult Nutrition` subjects. A missing match is recorded as unconfirmed (`null`), not absence.
+The report records evidence topics, survey IDs, principal years and fieldwork year labels.
+
+`build_data.py` validates the count file against unique report survey IDs and exports identical
+`surveyYears` and `nutritionDefinition` fields to both apps. It rejects the old participant schema;
+refresh DHS with the command above before building an existing checkout. Country details list
+fieldwork year labels and highlight years where at least one survey has confirmed nutrition
+coverage. Time filtering and map/chart calculations use the principal survey year and survey counts.
+
+The earliest mapped DHS survey defines the global timeline start. The build omits earlier years
+from every exported dataset and recalculates summaries and aggregates after filtering, so older
+GBIF records cannot influence timelines or chart scales. Source JSON files retain their full history.
+
+Regression checks: `python3 -m unittest discover -s processing -p 'test_*.py'`.
 
 ## Build yearly MICS participant counts
 
@@ -144,8 +188,8 @@ save it as `processing/data/raw/MICS_Datasets.zip`, and run:
 python3 processing/fetch_mics.py
 ```
 
-This writes `processing/data/mics.json` in the shared `{ISO3: {year: count}}` format. As with DHS,
-participants are defined as interviewed women plus interviewed men where those individual
+This writes `processing/data/mics.json` in the shared `{ISO3: {year: count}}` format.
+Counts represent interview records for women plus men where those individual
 questionnaire files are available. Household rosters and child files are excluded to avoid counting
 households or people more than once. The parser reads case counts directly from the nested SPSS file
 headers, so it does not need to extract the 1+ GB archive or install an SPSS library.
@@ -172,13 +216,13 @@ country enumeration. Each retained record must:
 
 - have interpreted coordinates and no GBIF geospatial issue;
 - have occurrence status `PRESENT`;
-- use a field-evidence or material basis of record: human observation, machine observation,
-  observation, preserved specimen, material sample, or generic occurrence; and
+- have basis of record `HUMAN_OBSERVATION`, `MACHINE_OBSERVATION` or `LIVING_SPECIMEN`; and
 - fall within the selected year range.
 
-This excludes explicit absences, undated or out-of-range occurrences, fossils, and
-`LIVING_SPECIMEN` records such as explicitly identified zoo, aquarium, living-collection, or
-cultivated specimens. GBIF's interpreted geospatial flag covers core problems such as zero,
+All other basis types are excluded, including `PRESERVED_SPECIMEN`, `FOSSIL_SPECIMEN`,
+`MATERIAL_SAMPLE`, `MATERIAL_CITATION`, `OBSERVATION` and generic `OCCURRENCE` records.
+Explicit absences and undated/out-of-range occurrences are also excluded.
+GBIF's interpreted geospatial flag covers core problems such as zero,
 invalid, out-of-range, and country-coordinate mismatches; it is not equivalent to applying a
 record-level tool such as CoordinateCleaner.
 
@@ -194,10 +238,11 @@ The outputs are:
   known wild-status limitation, and per-country totals split by kingdom.
 
 These are occurrence-record counts, not counts of distinct species or individual organisms. GBIF
-has no universal flag proving that every observation or preserved specimen came from a wild
-organism. Excluding `LIVING_SPECIMEN` reduces explicitly captive or cultivated records, but a
-publisher may omit that context; stronger verification requires a GBIF download and record-level
-review. `build_data.py` includes GBIF in the Ecology category.
+has no universal flag proving every record came from a wild or native organism; included
+`LIVING_SPECIMEN` records may represent captive or cultivated organisms. `build_data.py` validates
+the allowlist and country totals against the audit report, rejecting stale counts generated under
+the former filters. It exports the same filter metadata to both apps and retains the shared DHS
+timeline cutoff. Rerun `fetch_gbif.py` before building older data.
 
 ## Build yearly LSMS participant-record counts
 

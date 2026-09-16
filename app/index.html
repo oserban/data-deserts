@@ -96,6 +96,9 @@
         aria-label="Search for a country" />
       <datalist id="countryList"></datalist>
       <div class="toolbar-actions" aria-label="Application actions">
+        <button type="button" id="tourButton" class="toolbar-action" aria-label="Restart dashboard tour" data-tooltip="Restart dashboard tour">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="m16 8-2.5 5.5L8 16l2.5-5.5z"></path></svg>
+        </button>
         <button type="button" id="shareButton" class="toolbar-action" aria-label="Share view" data-tooltip="Share view">
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="18" cy="5" r="2.5"></circle><circle cx="6" cy="12" r="2.5"></circle><circle cx="18" cy="19" r="2.5"></circle><path d="m8.2 10.8 7.6-4.5M8.2 13.2l7.6 4.5"></path></svg>
         </button>
@@ -105,13 +108,15 @@
         <button type="button" id="coverageButton" class="toolbar-action" aria-label="Coverage examples" data-tooltip="Coverage examples">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V9h4v10M10 19V5h4v14M16 19v-7h4v7M3 19.5h18"></path></svg>
         </button>
-        <button type="button" id="helpButton" class="toolbar-action" aria-label="Help" data-tooltip="Help">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M9.7 9a2.4 2.4 0 1 1 3.5 2.1c-.8.4-1.2.9-1.2 1.9M12 17h.01"></path></svg>
-        </button>
         <a class="toolbar-action" href="https://github.com/oserban/data-deserts/issues/new/choose"
           target="_blank" rel="noopener noreferrer" aria-label="Report an issue in a new window"
           data-tooltip="Report an issue">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8v5M12 17h.01"></path><circle cx="12" cy="12" r="9"></circle><path d="M15.5 5.5 19 2m-2 0h2v2"></path></svg>
+        </a>
+        <a class="toolbar-action" href="https://github.com/oserban/data-deserts"
+          target="_blank" rel="noopener noreferrer" aria-label="View source code in a new window"
+          data-tooltip="View source code">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 6-6 6 6 6m8-12 6 6-6 6M14 4l-4 16"></path></svg>
         </a>
       </div>
     </div>
@@ -124,19 +129,6 @@
       <div id="detailMeta"></div>
       <div id="detailBody"></div>
     </aside>
-
-    <div id="intro">
-      <div class="intro-card">
-        <h2>Where does data exist — and where doesn't it?</h2>
-        <p>This map gives an overall, dataset-segmented record assessment for countries included in the
-          <a href="https://dhsprogram.com/countries/" target="_blank" rel="noopener">DHS Program</a>.
-          Each radial segment compares records per million km² only against the same dataset or category in other DHS-covered countries; sources with different count units are never compared directly. Pick a
-          <b>time window</b>, filter the included datasets, and <b>click a country</b> to inspect its underlying records.
-          Countries without DHS participant data remain greyed out.</p>
-        <div class="intro-actions"><button id="introClose">Explore the map</button></div>
-        <small>You can reopen this introduction with Help.</small>
-      </div>
-    </div>
 
     <div id="coverageModal" class="modal-overlay" role="dialog" aria-modal="true"
       aria-labelledby="coverageTitle" aria-hidden="true">
@@ -165,9 +157,10 @@
             Used under the Living Planet Database Data Use Policy, including its attribution and
             third-party sharing restrictions.</p>
             <a href="https://www.livingplanetindex.org/documents/data_agreement.pdf" target="_blank" rel="noopener">Data Use Policy</a></section>
-          <section><h3>PREDICTS</h3><p>Natural History Museum PREDICTS database, release 2016,
+          <section><h3>PREDICTS</h3><p>Natural History Museum PREDICTS database, 2016 release V1.1 and November 2022 additions,
             licensed under Creative Commons Attribution-NonCommercial 4.0.</p>
-            <a href="https://data.nhm.ac.uk/dataset/the-2016-release-of-the-predicts-database-v1-1" target="_blank" rel="noopener">Dataset and licence</a></section>
+            <a href="https://data.nhm.ac.uk/dataset/the-2016-release-of-the-predicts-database-v1-1" target="_blank" rel="noopener">2016 V1.1 and licence</a> ·
+            <a href="https://data.nhm.ac.uk/dataset/release-of-data-added-to-the-predicts-database-november-2022" target="_blank" rel="noopener">November 2022 additions and licence</a></section>
           <section><h3>GBIF</h3><p>GBIF-mediated occurrence data. Source datasets use record-level
             CC0, CC BY 4.0, or CC BY-NC 4.0 terms; the applicable attribution and non-commercial
             conditions must be followed.</p>
@@ -195,9 +188,24 @@
     </div>
   </main>
 
+  <dialog id="dashboardTour" aria-labelledby="tourTitle" aria-describedby="tourDescription">
+    <div id="tourSpotlight" aria-hidden="true"></div>
+    <div class="tour-card">
+      <span id="tourProgress"></span>
+      <h2 id="tourTitle" tabindex="-1"></h2>
+      <p id="tourDescription"></p>
+      <div class="tour-actions">
+        <button type="button" id="tourSkip">Skip tour</button>
+        <button type="button" id="tourBack">Back</button>
+        <button type="button" id="tourNext">Next</button>
+      </div>
+    </div>
+  </dialog>
+
   <script src="vendor/leaflet.js"></script>
   <script src="data/world.js"></script>
   <script src="data/datasets.js"></script>
   <script src="app.js"></script>
+  <script src="tour.js"></script>
 </body>
 </html>

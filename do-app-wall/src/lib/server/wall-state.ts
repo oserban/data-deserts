@@ -1,4 +1,6 @@
 import data from '../../data/datasets.json';
+// Keep server imports out of the realtime barrel, which initializes client engines and stores.
+// noinspection ES6PreferShortImport
 import { DEFAULT_STATE, MAX_COMPARE_COUNTRIES, type DataDesertsState } from '../realtime/types';
 
 const dhsRecords = (data.datasets as Record<string, { records: Record<string, unknown> }>).dhs
@@ -15,6 +17,13 @@ export function getWallState() {
 
 export function updateWallState(input: Partial<DataDesertsState>) {
     const previous = currentState;
+    const clampYear = (value: unknown, fallback: number) =>
+        Math.max(
+            data.meta.yearMin,
+            Math.min(data.meta.yearMax, Math.round(finite(value, fallback)))
+        );
+    const yearFrom = clampYear(input.yearFrom, previous.yearFrom);
+    const yearTo = Math.max(yearFrom, clampYear(input.yearTo, previous.yearTo));
     const countries = Array.isArray(input.countries)
         ? [
               ...new Set(
@@ -33,8 +42,8 @@ export function updateWallState(input: Partial<DataDesertsState>) {
         ])
     );
     currentState = {
-        yearFrom: Math.round(finite(input.yearFrom, previous.yearFrom)),
-        yearTo: Math.round(finite(input.yearTo, previous.yearTo)),
+        yearFrom,
+        yearTo,
         selectedDatasets: Array.isArray(input.selectedDatasets)
             ? [
                   ...new Set(

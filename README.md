@@ -4,7 +4,7 @@ Data Deserts is a static interactive map for comparing the geographic and tempor
 ecology and public-health datasets. Countries are represented by radial coverage charts, allowing sources
 to be viewed individually or grouped into Ecology and Public Health categories.
 
-The current visualisation is scoped to countries with DHS participant data. For those countries, a
+The current visualisation is scoped to countries with DHS survey data. For those countries, a
 missing source-country-year combination remains missing; it is not inferred from another dataset.
 
 ## About the project

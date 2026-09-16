@@ -42,6 +42,10 @@
     return datasetOrder.filter(function (key) { return state.selected[key]; });
   }
 
+  function countUnit(keys) {
+    return keys.length === 1 ? DATASETS[keys[0]].unit : "records";
+  }
+
   function categoryOrder() {
     return META.categoryOrder.filter(function (domain) {
       return datasetOrder.some(function (key) { return DATASETS[key].domain === domain; });
@@ -331,14 +335,14 @@
 
   function tooltipHTML(feature) {
     if (!countryInScope(feature.id)) {
-      return "<b>" + escapeHTML(feature.properties.name) + "</b><br>Outside DHS participant-data scope";
+      return "<b>" + escapeHTML(feature.properties.name) + "</b><br>Outside DHS survey-coverage scope";
     }
     var rows = selectedKeys().map(function (key) {
       return escapeHTML(DATASETS[key].name) + ": " + formatNumber(datasetCount(key, feature.id)) +
         " " + escapeHTML(DATASETS[key].unit);
     });
     return "<b>" + escapeHTML(feature.properties.name) + "</b><br>" +
-      "Total: " + formatNumber(countryCount(feature.id)) + " records" +
+      "Total: " + formatNumber(countryCount(feature.id)) + " " + escapeHTML(countUnit(selectedKeys())) +
       (rows.length ? "<br>" + rows.join("<br>") : "<br>No datasets selected");
   }
 
@@ -458,7 +462,9 @@
         var label = firstYear === lastYear ? String(firstYear) : firstYear + "–" + lastYear;
         paths.push('<path d="' + ringPath(start, end) + '" fill="' + fill +
           '" class="bucket' + (count ? '' : ' empty-bucket') + '"><title>' + label + ': ' +
-          formatNumber(count) + ' records</title></path>');
+          formatNumber(count) + ' ' + escapeHTML(countUnit(item.keys.filter(function (key) {
+            return state.selected[key];
+          }))) + '</title></path>');
       }
     });
     var fontSize = Math.max(4, Math.min(9, Math.round(size * 0.105)));
@@ -622,7 +628,7 @@
       var active = Number(year) >= state.yearFrom && Number(year) <= state.yearTo;
       var height = totals[year] ? Math.max(2, Math.round(100 * minMaxScore(totals[year], range))) : 2;
       html += '<i class="' + (active ? "active" : "") + '" style="height:' + height + '%" title="' +
-        year + ": " + formatNumber(totals[year]) + ' records"></i>';
+        year + ": " + formatNumber(totals[year]) + ' ' + escapeHTML(countUnit(selectedKeys())) + '"></i>';
     });
     document.getElementById("yearHist").innerHTML = html;
   }
@@ -655,7 +661,7 @@
           '</b><span><strong>' + escapeHTML(dataset.unit) + ':</strong> ' +
           escapeHTML(dataset.description) + '.</span></div>';
       }).join("") + '</details>';
-    document.getElementById("recordTotal").textContent = formatNumber(selectedTotal()) + " records";
+    document.getElementById("recordTotal").textContent = formatNumber(selectedTotal()) + " " + countUnit(keys);
     document.getElementById("legendMax").textContent = "Grey = no records";
     document.getElementById("mapCaption").textContent =
       (keys.length ? keys.length + " selected dataset" + (keys.length === 1 ? "" : "s") : "No datasets") +
@@ -693,8 +699,10 @@
       });
     }
     var from = Number(params.get("from")), to = Number(params.get("to"));
-    if (from >= META.yearMin && from <= META.yearMax) state.yearFrom = from;
-    if (to >= META.yearMin && to <= META.yearMax) state.yearTo = to;
+    if (params.has("from") && Number.isFinite(from))
+      state.yearFrom = Math.max(META.yearMin, Math.min(META.yearMax, Math.round(from)));
+    if (params.has("to") && Number.isFinite(to))
+      state.yearTo = Math.max(META.yearMin, Math.min(META.yearMax, Math.round(to)));
     if (state.yearFrom > state.yearTo) state.yearFrom = state.yearTo;
     if (params.has("hist")) state.yearlyHistograms = params.get("hist") === "1";
     if (params.has("group")) state.groupedDonuts = params.get("group") === "categories";
@@ -943,6 +951,27 @@
 
   function datasetDetailHTML(key, iso, nested) {
     var dataset = DATASETS[key], count = datasetCount(key, iso);
+    if (key === "dhs") {
+      var years = (dataset.surveyYears[iso] || []).filter(function (entry) {
+        return entry.year >= state.yearFrom && entry.year <= state.yearTo;
+      });
+      return '<div class="dataset-detail' + (nested ? ' nested' : '') + '"><h3><i style="background:' +
+        dataset.color + '"></i><a href="' + dataset.url + '" target="_blank" rel="noopener" style="color:inherit">DHS</a></h3>' +
+        '<p>Survey years in this window</p>' + (years.length
+          ? '<ul class="survey-years" aria-label="DHS survey years">' + years.map(function (entry) {
+            var nutrition = entry.nutrition === true;
+            var title = entry.surveyCount + ' survey' + (entry.surveyCount === 1 ? '' : 's') +
+              ' (' + entry.surveyTypes.join(', ') + '); ' + (nutrition
+                ? 'Nutrition: ' + entry.nutritionTopics.join('; ')
+                : 'Nutrition not confirmed in DHS metadata');
+            return '<li class="survey-year' + (nutrition ? ' has-nutrition' : '') + '" title="' +
+              escapeHTML(title) + '">' + escapeHTML(entry.label) + (nutrition
+                ? ' <span class="nutrition-label">Nutrition</span>' : '') + '</li>';
+          }).join('') + '</ul>'
+          : '<p class="empty">No DHS surveys in this window.</p>') +
+        '<p class="unit-explanation">' + escapeHTML(dataset.nutritionDefinition) +
+        '.</p><p class="unit-explanation">Survey ranges show fieldwork years; filters and charts use the principal survey year. Each survey counts once, regardless of its individual or household files.</p></div>';
+    }
     return '<div class="dataset-detail' + (nested ? ' nested' : '') + '"><h3><i style="background:' +
       dataset.color + '"></i><a href="' + dataset.url + '" target="_blank" rel="noopener" style="color:inherit">' +
       escapeHTML(dataset.name) + '</a></h3><p>' + formatNumber(count) + ' ' + escapeHTML(dataset.unit) +
@@ -957,7 +986,7 @@
     }).join("");
     return '<section class="category-detail"><h3><span class="category-swatches">' + swatches + '</span>' +
       escapeHTML(series.label) + '</h3><p>' + formatNumber(seriesCount(series, iso)) +
-      ' records in this window</p>' + seriesYearStrip(series, iso) +
+      ' ' + escapeHTML(countUnit(keys)) + ' in this window</p>' + seriesYearStrip(series, iso) +
       '<details class="dataset-breakdown"><summary>Show dataset details</summary>' +
       keys.map(function (key) { return datasetDetailHTML(key, iso, true); }).join("") + '</details></section>';
   }
@@ -965,7 +994,7 @@
   function countryDetailHTML(iso) {
     var keys = selectedKeys();
     return !countryInScope(iso)
-      ? '<div class="empty">Records are shown only for countries with DHS participant data.</div>'
+      ? '<div class="empty">Records are shown only for countries with DHS survey data.</div>'
       : keys.length ? coverageSummaryHTML(iso) + (state.groupedDonuts
         ? displaySeries().filter(function (series) { return series.selected; }).map(function (series) {
           return categoryDetailHTML(series, iso);
@@ -999,8 +1028,8 @@
     panel.dataset.iso = iso;
     document.getElementById("detailName").textContent = feature.properties.name;
     document.getElementById("detailMeta").textContent = countryInScope(iso)
-      ? formatNumber(countryCount(iso)) + " selected records"
-      : "Outside DHS participant-data scope";
+      ? formatNumber(countryCount(iso)) + " selected " + countUnit(selectedKeys())
+      : "Outside DHS survey-coverage scope";
     document.getElementById("detailBody").innerHTML = countryDetailHTML(iso);
     panel.style.display = "block";
   }
@@ -1060,12 +1089,6 @@
       navigator.clipboard.writeText(url).then(function () { toast("View link copied"); }, function () { toast("Copy the URL from the address bar"); });
     } else toast("Copy the URL from the address bar");
   };
-
-  function setIntro(open) {
-    document.getElementById("intro").classList.toggle("open", open);
-  }
-  document.getElementById("introClose").onclick = function () { setIntro(false); };
-  document.getElementById("helpButton").onclick = function () { setIntro(true); };
 
   function setCoverage(open) {
     var modal = document.getElementById("coverageModal");

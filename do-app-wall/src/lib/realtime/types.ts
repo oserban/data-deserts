@@ -1,3 +1,5 @@
+import data from '../../data/datasets.json';
+
 export type BusMessage = {
     type: string;
     peerId?: string;
@@ -51,8 +53,8 @@ export type ControlStoreState = WallStoreState;
 export type ScreenStoreState = WallStoreState;
 export const MAX_COMPARE_COUNTRIES = 8;
 export const DEFAULT_STATE: DataDesertsState = {
-    yearFrom: 1960,
-    yearTo: 2025,
+    yearFrom: data.meta.yearMin,
+    yearTo: data.meta.yearMax,
     selectedDatasets: [
         'biotime',
         'living_planet',

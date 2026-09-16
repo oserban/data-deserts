@@ -8,16 +8,23 @@ agriculture dataset, and three public-health datasets:
 - PREDICTS
 - GBIF
 - LSMS-ISA agricultural file-row records
-- DHS participant counts
-- MICS participant counts
+- DHS survey counts
+- MICS interview-record counts
 - LSMS household-roster person records
 
 See [`../DATASETS.md`](../DATASETS.md) for source provenance, counting-unit definitions, cleaning,
 access constraints, and the distinction between missing records and confirmed zero counts.
 
-Only countries with DHS participant data are included in the assessment. MICS and ecology records
+Only countries with DHS survey data are included in the assessment. MICS and ecology records
 are evaluated within that DHS country coverage; missing source data remains visibly missing.
 Hydrology remains a disabled placeholder.
+
+PREDICTS combines the 2016 V1.1 site summaries and the November 2022 additions through the
+shared Python pipeline, counting unique source/study/block/site IDs by sampling midpoint year.
+
+The shared timeline begins at the earliest available DHS survey (currently 1985). Earlier
+records are excluded from both apps’ generated coverage data, summaries and chart scales.
+The cutoff is global, not the first DHS survey in each individual country.
 
 ## Run it
 
@@ -32,6 +39,11 @@ extra enclosing directory inside the archive.
 
 ## Controls
 
+- A four-step dashboard tour opens on the first visit. The compass icon in the map toolbar
+  (**Restart dashboard tour**) restarts it;
+  **Skip tour** or Escape dismisses it. The browser remembers that it has been shown using local
+  storage (if storage is blocked, it appears again on the next visit). The tour preserves filters,
+  the time window, and the sidebar's previous state.
 - The two-ended time control filters exact country/year record counts.
 - The **Filters** section contains the time window and two icon state buttons: annual time bins
   and dataset/category grouping. Each button changes icon and pressed styling when active, with its
@@ -57,8 +69,11 @@ extra enclosing directory inside the archive.
   blank. Time-series intensities use a min–max scale calculated independently for each dataset from
   all of that dataset's country-year observations, so the same value has the same intensity in every
   country. Grouped categories receive an equivalent cross-country category scale.
-- Hovering shows the selected-source breakdown. Clicking shows one yearly strip per selected dataset
-  in dataset mode; category mode shows an aggregate category strip with a collapsible dataset breakdown.
+- Hovering shows the selected-source breakdown. Country details list DHS survey years, highlighting
+  those with any confirmed nutrition topic (including feeding practices and micronutrients). Other
+  datasets show yearly strips. Category mode includes the same DHS year list inside its breakdown.
+  DHS charts count unique surveys, never participants or households; filters use principal survey
+  years and displayed fieldwork labels may span years.
 - Search and region buttons navigate the map. **Share view** preserves dataset and year filters in
   the URL hash.
 - **Data & licences** opens source acknowledgements, provider terms, and the processed-bundle
@@ -74,7 +89,8 @@ python3 processing/build_data.py
 
 The build reads `processing/data/biotime.json`, `living_planet.json`, `predicts.json`, `dhs.json`,
 `mics.json`, `gbif.json`, `lsms_isa.json`, and `lsms.json`. Each file
-uses `{ISO3: {year: count}}`. It writes:
+uses `{ISO3: {year: count}}`. DHS also requires `dhs_report.json` for validated survey counts,
+year labels and nutrition evidence; rerun `fetch_dhs.py` when migrating old participant data. It writes:
 
 - `data/world.js`: country polygons
 - `data/datasets.js`: separate source records, their aggregate, and summary metadata
@@ -95,6 +111,7 @@ access-control data are not included in the build.
 | `index.html` | Application structure and script loading |
 | `styles/app.css` | Layout and visual styling |
 | `app.js` | Dataset filtering, aggregation, map rendering, and URL state |
+| `tour.js` | First-visit dashboard tour and manual restart |
 | `data/datasets.js` | Generated separate and aggregated country/year counts |
 | `data/world.js` | Generated country polygons |
 | `vendor/` | Bundled Leaflet |

@@ -35,6 +35,18 @@ type Dataset = {
     unit?: string;
     description?: string;
     records: Record<string, Record<string, number>>;
+    nutritionDefinition?: string;
+    surveyYears?: Record<
+        string,
+        Array<{
+            year: number;
+            label: string;
+            surveyCount: number;
+            surveyTypes: string[];
+            nutrition: true | null;
+            nutritionTopics: string[];
+        }>
+    >;
 };
 const datasets = data.datasets as Record<string, Dataset>;
 const meta = data.meta as {
@@ -580,12 +592,12 @@ function Histogram({ dataset }: { dataset: Dataset }) {
     return (
         <div className="mt-5 rounded-2xl border border-[#2c3e50] bg-[#0e1722] p-5">
             <div className="flex justify-between text-xl">
-                <b>Global records by year</b>
+                <b>Global {dataset.unit ?? 'records'} by year</b>
                 <span className="text-[#9fb0c0]">
                     {Object.values(totals)
                         .reduce((a, b) => a + b, 0)
                         .toLocaleString()}{' '}
-                    records
+                    {dataset.unit ?? 'records'}
                 </span>
             </div>
             <svg className="mt-3 h-28 w-full" viewBox="0 0 1000 110">
@@ -1045,7 +1057,8 @@ function CountryDetails({ iso, state }: { iso: string; state: ScreenStoreState }
         <article className="mx-24 min-h-[3500px] min-w-0 rounded-[32px] border border-[#2c3e50] bg-[#131d29] p-9">
             <h2 className="pr-8 text-6xl leading-tight font-semibold">{countryName(iso)}</h2>
             <p className="mt-3 text-2xl text-[#9fb0c0]">
-                {total.toLocaleString()} selected records
+                {total.toLocaleString()} selected{' '}
+                {rows.length === 1 ? (rows[0].dataset.unit ?? 'records') : 'records'}
             </p>
             <p className="mt-2 text-xl text-[#5ec5ff]">
                 Selected by {state.countryAttribution[iso] ?? 'Presenter'}
@@ -1122,7 +1135,8 @@ function DomainDetail({
                 {domain}
             </h3>
             <p className="mt-3 text-2xl text-[#9fb0c0]">
-                {total.toLocaleString()} records in this window
+                {total.toLocaleString()}{' '}
+                {rows.length === 1 ? (rows[0].dataset.unit ?? 'records') : 'records'} in this window
             </p>
             <div className="mt-5 flex h-9 gap-[2px] overflow-hidden rounded bg-[#101821]">
                 {years.map((year, index) => (
@@ -1173,6 +1187,7 @@ function DatasetDetail({
     count: number;
     state: ScreenStoreState;
 }) {
+    if (id === 'dhs') return <DhsSurveyYears dataset={dataset} iso={iso} state={state} />;
     const yearly = dataset.records[iso] ?? {};
     const years = Array.from(
         { length: state.yearTo - state.yearFrom + 1 },
@@ -1210,6 +1225,65 @@ function DatasetDetail({
                 <span>{state.yearFrom}</span>
                 <span>{state.yearTo}</span>
             </div>
+        </section>
+    );
+}
+
+function DhsSurveyYears({
+    dataset,
+    iso,
+    state
+}: {
+    dataset: Dataset;
+    iso: string;
+    state: ScreenStoreState;
+}) {
+    const years = (dataset.surveyYears?.[iso] ?? []).filter(
+        (entry) => entry.year >= state.yearFrom && entry.year <= state.yearTo
+    );
+    return (
+        <section className="border-t border-[#2c3e50] pt-6">
+            <h3 className="flex items-center gap-4 text-3xl font-semibold">
+                <i className="size-5 rounded" style={{ background: dataset.color }} />
+                DHS
+            </h3>
+            <p className="mt-3 text-2xl text-[#9fb0c0]">Survey years in this window</p>
+            {years.length ? (
+                <ul
+                    className="mt-4 flex list-none flex-wrap gap-3 p-0"
+                    aria-label="DHS survey years"
+                >
+                    {years.map((entry) => (
+                        <li
+                            key={entry.year}
+                            className={`rounded-lg border px-4 py-3 text-2xl ${
+                                entry.nutrition
+                                    ? 'border-[#55c271] bg-[#183b2a] text-[#c8f5d5]'
+                                    : 'border-[#2c3e50] text-[#9fb0c0]'
+                            }`}
+                            title={`${entry.surveyCount} survey${entry.surveyCount === 1 ? '' : 's'} (${entry.surveyTypes.join(', ')}); ${
+                                entry.nutrition
+                                    ? `Nutrition: ${entry.nutritionTopics.join('; ')}`
+                                    : 'Nutrition not confirmed in DHS metadata'
+                            }`}
+                        >
+                            {entry.label}
+                            {entry.nutrition && (
+                                <span className="ml-2 text-xl font-semibold">Nutrition</span>
+                            )}
+                        </li>
+                    ))}
+                </ul>
+            ) : (
+                <p className="mt-4 text-xl text-[#9fb0c0]">No DHS surveys in this window.</p>
+            )}
+            <p className="mt-3 text-xl leading-relaxed text-[#9fb0c0]">
+                {dataset.nutritionDefinition}.
+            </p>
+            <p className="mt-3 text-xl leading-relaxed text-[#9fb0c0]">
+                Survey ranges show fieldwork years; filters and charts use the principal survey
+                year. Each survey counts once, regardless of its individual or household files.
+            </p>
         </section>
     );
 }

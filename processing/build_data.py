@@ -33,6 +33,8 @@ import math
 import os
 
 from data_deserts import load_geojson
+from fetch_predicts import RELEASES as PREDICTS_RELEASES
+from fetch_gbif import ALLOWED_BASIS_OF_RECORD
 
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -87,7 +89,7 @@ DATASET_DEFINITIONS = {
         "file": "predicts.json",
         "domain": "Ecology",
         "url": "https://data.nhm.ac.uk/dataset/the-2016-release-of-the-predicts-database-v1-1",
-        "description": "distinct terrestrial biodiversity sampling sites represented in PREDICTS",
+        "description": "distinct terrestrial biodiversity sampling sites from PREDICTS 2016 V1.1 and the November 2022 additions, deduplicated by source/study/block/site and assigned to the sampling midpoint year",
         "unit": "sites",
         "color": "#f2c94c",
     },
@@ -96,7 +98,7 @@ DATASET_DEFINITIONS = {
         "file": "gbif.json",
         "domain": "Ecology",
         "url": "https://www.gbif.org/occurrence/search",
-        "description": "species-occurrence records published through GBIF after the project filters are applied",
+        "description": "GBIF human observations, machine observations and living specimens with coordinates, no flagged geospatial issues and present status; all other basis-of-record types are excluded",
         "unit": "occurrences",
         "color": "#2ec4b6",
     },
@@ -114,8 +116,8 @@ DATASET_DEFINITIONS = {
         "file": "dhs.json",
         "domain": "Public Health",
         "url": "https://dhsprogram.com/",
-        "description": "women and men recorded as interviewed in DHS survey metadata",
-        "unit": "participants",
+        "description": "unique completed DHS Program surveys with published indicators, counted once per survey ID in the principal survey year; counts represent surveys, not people or households",
+        "unit": "surveys",
         "color": "#e45c5c",
     },
     "mics": {
@@ -123,8 +125,8 @@ DATASET_DEFINITIONS = {
         "file": "mics.json",
         "domain": "Public Health",
         "url": "https://mics.unicef.org/surveys",
-        "description": "women and men represented in the selected MICS individual survey files",
-        "unit": "participants",
+        "description": "women's and men's interview records in selected MICS individual files; household and child files are excluded, and counts do not establish unique people across surveys",
+        "unit": "interview records",
         "color": "#c96bd8",
     },
     "lsms": {
@@ -181,6 +183,91 @@ def aggregate_records(datasets, allowed_iso=None):
     }
 
 
+def load_dhs_coverage(path, records):
+    """Validate survey units against provenance before either app can use them."""
+    with open(path, encoding="utf-8") as source:
+        report = json.load(source)
+    meta = report.get("_meta", {})
+    refresh = "Run python3 processing/fetch_dhs.py to refresh DHS survey coverage."
+    if meta.get("schemaVersion") != 2 or meta.get("unit") != "surveys":
+        raise ValueError("DHS data still uses the old participant schema. " + refresh)
+    if not meta.get("nutritionDefinition"):
+        raise ValueError("DHS nutrition definition is missing. " + refresh)
+    totals, coverage, seen = {}, {}, set()
+    for survey in report["surveys"]:
+        survey_id = survey["surveyId"]
+        if not survey_id or survey_id in seen:
+            raise ValueError("Missing or duplicate DHS survey ID. " + refresh)
+        seen.add(survey_id)
+        iso, year = survey["iso3"], str(survey["year"])
+        topics = survey["nutritionTopics"]
+        if ((survey["nutrition"] is not True and survey["nutrition"] is not None) or
+                (survey["nutrition"] is True) != bool(topics)):
+            raise ValueError("Inconsistent DHS nutrition evidence. " + refresh)
+        yearly = totals.setdefault(iso, {})
+        yearly[year] = yearly.get(year, 0) + 1
+        entry = coverage.setdefault(iso, {}).setdefault(year, {
+            "year": int(year), "labels": set(), "surveyCount": 0,
+            "nutrition": None, "nutritionTopics": set(), "surveyTypes": set(),
+        })
+        entry["labels"].add(survey["yearLabel"])
+        entry["surveyTypes"].add(survey["surveyType"])
+        entry["surveyCount"] += 1
+        entry["nutritionTopics"].update(topics)
+        if survey["nutrition"] is True:
+            entry["nutrition"] = True
+    if totals != records:
+        raise ValueError("DHS counts do not match unique surveys in dhs_report.json. " + refresh)
+    result = {}
+    for iso, yearly in sorted(coverage.items()):
+        result[iso] = []
+        for year, entry in sorted(yearly.items()):
+            entry["label"] = ", ".join(sorted(entry.pop("labels")))
+            entry["nutritionTopics"] = sorted(entry["nutritionTopics"])
+            entry["surveyTypes"] = sorted(entry["surveyTypes"])
+            result[iso].append(entry)
+    return result, meta["nutritionDefinition"]
+
+
+def load_predicts_sources(path, records):
+    """Reject a stale single-release aggregate before labelling it as combined."""
+    refresh = "Run python3 processing/fetch_predicts.py to refresh both PREDICTS releases."
+    if not os.path.exists(path):
+        raise ValueError("PREDICTS release provenance is missing. " + refresh)
+    with open(path, encoding="utf-8") as source:
+        report = json.load(source)
+    meta = report.get("_meta", {})
+    releases = report.get("releases", [])
+    expected = {release["resourceId"] for release in PREDICTS_RELEASES}
+    actual = {release.get("resourceId") for release in releases}
+    if (meta.get("schemaVersion") != 1 or meta.get("unit") != "sites" or
+            len(releases) != len(expected) or actual != expected):
+        raise ValueError("PREDICTS provenance must include V1.1 and the 2022 additions. " + refresh)
+    total = sum(count for yearly in records.values() for count in yearly.values())
+    if total != meta.get("matched") or total != sum(release["matched"] for release in releases):
+        raise ValueError("PREDICTS counts do not match release provenance. " + refresh)
+    return [{"name": release["name"], "url": release["url"]} for release in PREDICTS_RELEASES]
+
+
+def load_gbif_filters(path, records):
+    """Prevent cached counts from the former GBIF filter entering either app."""
+    refresh = "Run python3 processing/fetch_gbif.py to refresh GBIF with the current filters."
+    if not os.path.exists(path):
+        raise ValueError("GBIF filter provenance is missing. " + refresh)
+    with open(path, encoding="utf-8") as source:
+        report = json.load(source)
+    meta = report.get("_meta", {})
+    filters = meta.get("filters", {})
+    if set(filters.get("basisOfRecordIncluded", [])) != set(ALLOWED_BASIS_OF_RECORD):
+        raise ValueError("GBIF counts use an outdated basis-of-record filter. " + refresh)
+    country_totals = {iso: sum(yearly.values()) for iso, yearly in records.items()}
+    reported_totals = {iso: details["records"] for iso, details in report.get("byCountry", {}).items()
+                       if details["records"]}
+    if country_totals != reported_totals or sum(country_totals.values()) != meta.get("records"):
+        raise ValueError("GBIF counts do not match filter provenance. " + refresh)
+    return filters
+
+
 def dataset_summary(records):
     years = [int(year) for yearly in records.values() for year in yearly]
     return {
@@ -189,6 +276,23 @@ def dataset_summary(records):
         "yearMin": min(years) if years else None,
         "yearMax": max(years) if years else None,
     }
+
+
+def restrict_to_dhs_timeline(datasets):
+    """Keep app coverage from the first DHS survey, preserving source inputs."""
+    first_year = dataset_summary(datasets["dhs"]["records"])["yearMin"]
+    if first_year is None:
+        raise ValueError("Cannot define the app timeline without DHS surveys")
+    for dataset in datasets.values():
+        records = {}
+        for iso, yearly in dataset["records"].items():
+            retained = {year: count for year, count in yearly.items()
+                        if int(year) >= first_year}
+            if retained:
+                records[iso] = retained
+        dataset["records"] = records
+        dataset["summary"] = dataset_summary(records)
+    return first_year
 
 
 def write_javascript(path, assignments):
@@ -259,6 +363,21 @@ def main():
     datasets = {}
     for key, definition in DATASET_DEFINITIONS.items():
         records = load_records(os.path.join(DATA_DIR, definition["file"]))
+        metadata = {}
+        if key == "dhs":
+            survey_years, nutrition_definition = load_dhs_coverage(
+                os.path.join(DATA_DIR, "dhs_report.json"), records)
+            metadata["surveyYears"] = {
+                iso: years for iso, years in survey_years.items() if iso in valid_iso
+            }
+            metadata["nutritionDefinition"] = nutrition_definition
+            metadata["description"] = definition["description"] + ". " + nutrition_definition
+        if key == "predicts":
+            metadata["sources"] = load_predicts_sources(
+                os.path.join(DATA_DIR, "predicts_report.json"), records)
+        if key == "gbif":
+            metadata["filters"] = load_gbif_filters(
+                os.path.join(DATA_DIR, "gbif_report.json"), records)
         unknown = sorted(set(records).difference(valid_iso))
         if unknown:
             if key not in ALLOW_UNMAPPED_DATASETS:
@@ -269,6 +388,7 @@ def main():
             records = {iso: yearly for iso, yearly in records.items() if iso in valid_iso}
         dataset = {name: value for name, value in definition.items() if name != "file"}
         dataset["records"] = records
+        dataset.update(metadata)
         dataset["summary"] = dataset_summary(records)
         datasets[key] = dataset
 
@@ -278,6 +398,7 @@ def main():
         raise ValueError("Datasets use categories missing from CATEGORY_ORDER: %s" %
                          ", ".join(unknown_categories))
 
+    first_dhs_year = restrict_to_dhs_timeline(datasets)
     scope_iso = set().union(*(datasets[key]["records"] for key in SCOPE_DATASETS))
     for dataset in datasets.values():
         scoped_records = {iso: yearly for iso, yearly in dataset["records"].items()
@@ -292,7 +413,7 @@ def main():
         "datasetCount": len(datasets),
         "scopeDatasets": SCOPE_DATASETS,
         "scopeCountries": len(scope_iso),
-        "yearMin": aggregate_summary["yearMin"],
+        "yearMin": first_dhs_year,
         "yearMax": aggregate_summary["yearMax"],
         "aggregate": aggregate_summary,
     }

@@ -24,7 +24,7 @@ datasets do not expand this scope, and missing source data within a DHS country 
 sector or annual time bin.
 
 The counts are not directly comparable across sources. Depending on the dataset, one count may mean
-an occurrence record, population observation, sampling site, or interviewed participant. The app
+an occurrence record, population observation, sampling site, survey, or interview record. The app
 normalizes visual intensity independently within each dataset or displayed category.
 
 The app's **Data & licences** dialog acknowledges every integrated provider and links to its current
@@ -41,7 +41,7 @@ conditions. The processed deployment bundle is not offered as a replacement down
 | PREDICTS | Ecology | Sampling site assigned to a sampling year | `processing/data/predicts.json` | Included |
 | GBIF | Ecology | Cleaned occurrence record | `processing/data/gbif.json` | Included |
 | LSMS-ISA | Agriculture | Row in a classified agricultural data file | `processing/data/lsms_isa.json` | Included |
-| DHS | Public Health | Interviewed women plus interviewed men | `processing/data/dhs.json` | Included; defines country scope |
+| DHS | Public Health | Unique available surveys | `processing/data/dhs.json` | Included; defines country scope |
 | MICS | Public Health | Interviewed women plus interviewed men | `processing/data/mics.json` | Included |
 | LSMS | Public Health | Person/household-member roster record | `processing/data/lsms.json` | Included |
 
@@ -90,12 +90,12 @@ python3 processing/fetch_living_planet.py \
 
 ## PREDICTS
 
-- **Source:** [PREDICTS database V1.1](https://data.nhm.ac.uk/dataset/the-2016-release-of-the-predicts-database-v1-1)
+- **Sources:** [2016 V1.1](https://data.nhm.ac.uk/dataset/the-2016-release-of-the-predicts-database-v1-1) and [November 2022 additions](https://data.nhm.ac.uk/dataset/release-of-data-added-to-the-predicts-database-november-2022)
 - **Parser:** `processing/fetch_predicts.py`
-- **Input:** Natural History Museum datastore or an offline `sites.zip`
-- **Output:** `processing/data/predicts.json`
+- **Input:** both NHM site-summary resources, or separate offline CSV/ZIP files
+- **Output:** `processing/data/predicts.json`; per-release audit in `predicts_report.json`
 - **Unit:** one sampling site, assigned to the year of its sampling midpoint
-- **Cleaning:** site coordinates are matched to the project country boundaries
+- **Cleaning:** validate each release independently as JSON/CSV text labels (no unused R factor levels); deduplicate `SSBS` across releases, fail on conflicting site dates/coordinates, then match coordinates to project country boundaries. For RDS-to-CSV preparation, apply `droplevels()` to each release before combining
 - **Interpretation:** species-level measurements are not counted separately, preventing species-rich
   or intensively sampled sites from inflating geographic coverage
 
@@ -109,10 +109,11 @@ python3 processing/fetch_predicts.py
 - **Parser:** `processing/fetch_dhs.py`
 - **Output:** `processing/data/dhs.json`
 - **Audit output:** `processing/data/dhs_report.json`
-- **Unit:** interviewed women plus interviewed men reported for a survey
+- **Unit:** unique completed DHS Program surveys with published indicators, including DHS, AIS and MIS; one count per `SurveyId` in its principal survey year
 - **Country mapping:** official DHS country-code to ISO3 mapping from the API
-- **Cleaning:** households are retained in the audit report but never counted as people; partial
-  women-only or men-only surveys remain explicitly identified
+- **Cleaning:** survey IDs are deduplicated; women, men and household sample sizes are retained separately in the audit report and never summed into the coverage measure
+- **Nutrition:** any nutrition topic, including feeding practices, dietary diversity, food insecurity, anthropometry, anemia and micronutrients. Evidence comes from official survey characteristics or published Child Nutrition / Adult Nutrition indicators. Unconfirmed coverage is not treated as absence
+- **Display:** both apps show fieldwork year labels and highlight years with at least one nutrition survey; filters and charts use principal years and survey counts
 - **Integration role:** DHS is the sole reference defining which countries are visible in the app
 
 ```sh
@@ -149,13 +150,13 @@ python3 processing/fetch_mics.py
 - **Default taxonomic scope:** Animalia; `--include-plants` adds Plantae
 - **Default temporal scope:** 1900 through the current year
 - **Cleaning:** requires coordinates, rejects GBIF geospatial issues and explicit absences, and
-  excludes `FOSSIL_SPECIMEN` and `LIVING_SPECIMEN`
+  includes only `HUMAN_OBSERVATION`, `MACHINE_OBSERVATION` and `LIVING_SPECIMEN`
 - **Integration status:** included in the Ecology category
 
 GBIF counts are neither species richness nor individual abundance. GBIF has no universal query flag
-proving every record represents a wild organism. Excluding living specimens removes explicitly
-identified zoo, aquarium, cultivated, and living-collection records, but cannot repair missing
-publisher context. See the
+proving every record represents a wild organism. Preserved museum specimens and all other
+basis types are excluded. Included living specimens may represent captive or cultivated organisms;
+these filters do not establish native-range occurrence. See the
 [processing README](processing/README.md#build-yearly-cleaned-gbif-occurrence-counts) for the exact
 basis types, geospatial rules, facet validation, and limitations.
 

@@ -36,6 +36,7 @@ venv/
 processing/data/biotime.json
 processing/data/living_planet.json
 processing/data/predicts.json
+processing/data/predicts_report.json
 processing/data/dhs.json
 processing/data/dhs_report.json
 processing/data/mics.json
@@ -53,3 +54,5 @@ processing/raw-data/*
 app/data/datasets.js
 
 /do-app-wall/src/data/
+
+*.service

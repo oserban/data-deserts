@@ -15,6 +15,19 @@ video wall. It uses the same architecture and technology choices as `template-ap
 It is self-contained and does not import, serve, or resolve files from the repository's static
 `app/` directory.
 
+DHS uses the same Python-generated survey counts and nutrition metadata as the static app.
+Map and chart calculations count each available survey once. Country details list survey years
+and highlight any confirmed nutrition topic, including feeding practices and micronutrients.
+Both grouped and individual dataset views respect the selected principal-year window.
+Run `python3 processing/fetch_dhs.py` from the repository root before building old participant data.
+
+PREDICTS combines the 2016 V1.1 site summaries and the November 2022 additions through the
+shared Python pipeline, counting unique source/study/block/site IDs by sampling midpoint year.
+
+The shared timeline begins at the earliest available DHS survey (currently 1985). Earlier
+records are excluded from both apps’ generated coverage data, summaries and chart scales.
+The cutoff is global, not the first DHS survey in each individual country.
+
 ## Run
 
 Node 22.13 or newer and pnpm 11 are required.

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Parse MICS SPSS datasets and aggregate participants by country and year.
 
-Participants are defined consistently with ``fetch_dhs.py``: interviewed
-women plus interviewed men when those questionnaire files are available.
+Counts represent interviewed women plus interviewed men when those questionnaire
+files are available; they do not establish unique people across surveys.
 Household, household-member, birth-history, and child files are deliberately
 excluded because summing them would count households or duplicate people.
 
