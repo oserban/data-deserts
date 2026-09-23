@@ -703,14 +703,10 @@
       var selectedMetric = state.detailedHydro ? state.hydroMetric : state.agricultureMetric;
       var metric = agricultureModel.metrics[selectedMetric];
       var cropSeries = displaySeries();
-      var maximum = agricultureModel.maxima[selectedMetric];
       var modeTitle = state.detailedHydro ? 'Hydrology comparisons' : 'Agriculture crops';
       document.getElementById("datasetLegend").innerHTML = '<div class="legend-group-title">' + modeTitle + ' · ' +
         escapeHTML(metric.label) + '</div>' + donutLegendHTML(cropSeries) +
-        '<div class="assessment-gradient" style="background:linear-gradient(90deg,' + agricultureModel.color(0, selectedMetric) +
-        ',' + agricultureModel.color(maximum || 1, selectedMetric) + ')"></div>' +
-        '<div class="assessment-gradient-labels"><span>0 ' + metric.unit + '</span><span>' +
-        (maximum ? maximum.toFixed(2) + ' ' + metric.unit : 'No available values') + '</span></div>' +
+        metricGradientHTML(metric.label, selectedMetric) +
         '<p class="timeline-note">Each available map is transferred to the same country grid and converted to country-normalised shares before the metric is calculated. ' +
         escapeHTML(metric.note) + ' Grey = unavailable.</p>';
       document.getElementById("recordTotal").textContent = metric.label;
@@ -722,13 +718,22 @@
     }
     var keys = selectedKeys();
     var legendSeries = displaySeries();
+    var metricLegends = [{ label: 'Record-source coverage', metric: 'coverage' }];
+    if (state.selected.agriculture_maps) metricLegends.push({
+      label: 'Agricultural maps · ' + agricultureModel.metrics[state.agricultureAggregation].label,
+      metric: state.agricultureAggregation
+    });
+    if (state.selected.hydro_maps) metricLegends.push({
+      label: 'Hydrology maps · ' + agricultureModel.metrics.dispersion.label,
+      metric: 'dispersion'
+    });
     document.getElementById("datasetLegend").innerHTML =
       (state.groupedDonuts ? '<div class="legend-group-title">Grouped by category</div>' :
         '<div class="legend-group-title">Individual datasets</div>') + donutLegendHTML(legendSeries) +
-      '<div class="legend-group-title count-scale-title">Relative coverage within each dataset</div>' +
-      '<div class="assessment-gradient"></div><div class="assessment-gradient-labels">' +
-      '<span>Lower</span><span>Mid-range</span><span>Higher</span></div>' +
-      '<p class="timeline-note">Coverage combines a dataset\'s counted units per million km² (60%) and years with records (40%). Each dataset is scored separately, because its counted unit may be records, surveys, or station-years. <button type="button" class="coverage-info-button" id="coverageInfoButton" aria-label="Learn how coverage scores are calculated" title="How coverage scores are calculated">i</button></p>' +
+      '<div class="metric-gradient-list">' + metricLegends.map(function (entry) {
+        return metricGradientHTML(entry.label, entry.metric);
+      }).join('') + '</div>' +
+      '<p class="timeline-note">Record-source coverage combines a dataset\'s counted units per million km² (60%) and years with records (40%). Agriculture and hydrology map sectors use the separately labelled allocation metric. <button type="button" class="coverage-info-button" id="coverageInfoButton" aria-label="Learn how coverage scores are calculated" title="How coverage scores are calculated">i</button></p>' +
       '<div class="dataset-legend-grid">' + legendSeries.map(function (series) {
       var identity = state.groupedDonuts
         ? '<span class="legend-category-swatches">' + series.keys.map(function (key) {
@@ -757,6 +762,16 @@
       (state.groupedDonuts ? "category radial sectors" : "dataset radial sectors");
     renderCoverageExamples();
     renderCoverageMethod();
+  }
+
+  function metricGradientHTML(label, metric) {
+    var maximum = agricultureModel.maxima[metric] || 1;
+    var info = agricultureModel.metrics[metric];
+    return '<div class="metric-gradient"><div class="legend-group-title">' + escapeHTML(label) + '</div>' +
+      '<div class="assessment-gradient" style="background:linear-gradient(90deg,' + agricultureModel.color(0, metric) +
+      ',' + agricultureModel.color(maximum / 2, metric) + ',' + agricultureModel.color(maximum, metric) + ')"></div>' +
+      '<div class="assessment-gradient-labels"><span>0 ' + escapeHTML(info.unit) + '</span><span>' +
+      (agricultureModel.maxima[metric] ? agricultureModel.maxima[metric].toFixed(2) + ' ' + escapeHTML(info.unit) : 'No available values') + '</span></div></div>';
   }
 
   function renderCoverageMethod() {
