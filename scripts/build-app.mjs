@@ -18,6 +18,7 @@ const required = [
   "data/world.js",
   "data/datasets.js",
   "app.js",
+  "score-model.js",
   tourJsPath
 ];
 
@@ -46,7 +47,7 @@ async function writeHashed(directory, name, extension, content) {
   return `${directory}/${filename}`;
 }
 
-const [worldSource, datasetsSource, appSource, tourSource] = sources;
+const [worldSource, datasetsSource, appSource, agricultureSource, tourSource] = sources;
 const minifyJavaScript = async (source, sourcefile) => (await transform(source, {
   legalComments: "none", minify: true, sourcefile, sourcemap: false, target: ["es2018"]
 })).code;
@@ -56,7 +57,7 @@ const worldAsset = await writeHashed("assets", "world", "js",
 const datasetsAsset = await writeHashed("assets", "datasets", "js",
   await minifyJavaScript(datasetsSource, "datasets.js"));
 const appAsset = await writeHashed("assets", "app", "js",
-  await minifyJavaScript(appSource + "\n" + tourSource, "app.js"));
+  await minifyJavaScript(agricultureSource + "\n" + appSource + "\n" + tourSource, "app.js"));
 const cssAsset = await writeHashed("assets", "app", "css", (await transform(
   await readFile(resolve(app, appCssPath), "utf8"),
   { loader: "css", legalComments: "none", minify: true, sourcefile: "app.css" }
@@ -69,6 +70,7 @@ const leafletJsAsset = await writeHashed("vendor", "leaflet", "js",
 let html = await readFile(resolve(app, "index.html"), "utf8");
 html = html
   .replace(`\n  <script src="${tourJsPath}"></script>`, "")
+  .replace('\n  <script src="score-model.js"></script>', '')
   .replace(`<link rel="stylesheet" href="${leafletCssPath}" />`, `<link rel="stylesheet" href="${leafletCssAsset}" />`)
   .replace(`<link rel="stylesheet" href="${appCssPath}" />`, `<link rel="stylesheet" href="${cssAsset}" />`)
   .replace(`<script src="${leafletJsPath}"></script>`, `<script src="${leafletJsAsset}"></script>`)

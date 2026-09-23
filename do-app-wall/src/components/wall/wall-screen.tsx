@@ -14,6 +14,13 @@ import {
     useWallStore
 } from '../../lib/realtime';
 import {
+    datasetsForEstimates,
+    modelForEstimates,
+    scoreModel,
+    type AgricultureMetric,
+    type MetricResult
+} from '../../lib/score-model';
+import {
     DATASETS_COLS,
     DATASETS_START_COL,
     DETAIL_COLS,
@@ -35,7 +42,10 @@ type Dataset = {
     unit?: string;
     description?: string;
     records: Record<string, Record<string, number>>;
+    estimatedRecords?: Record<string, Record<string, number>>;
     nutritionDefinition?: string;
+    effective_resolution_km?: Record<string, Record<string, Record<string, number | null>>>;
+    spatialSupport?: { display: string };
     surveyYears?: Record<
         string,
         Array<{
@@ -111,7 +121,13 @@ export function WallScreen({ c, r }: { c: number; r: number }) {
     }, []);
     const coverage = useMemo(
         () => buildCoverage(state),
-        [state.yearFrom, state.yearTo, state.selectedDatasets, state.countries]
+        [
+            state.yearFrom,
+            state.yearTo,
+            state.selectedDatasets,
+            state.countries,
+            state.includeLsmsEstimates
+        ]
     );
     const isProject = c < PROJECT_COLS;
     const isDatasets = c >= DATASETS_START_COL && c < DATASETS_START_COL + DATASETS_COLS;
@@ -213,8 +229,8 @@ function ProjectTile({ c, r }: { c: number; r: number }) {
                 </h1>
                 <p className="mt-10 max-w-[3250px] text-[42px] leading-[1.45] text-[#9fb0c0]">
                     Data Deserts reveals uneven geographic and temporal coverage of ecological,
-                    agricultural and public-health data—and asks how transparent, responsible AI
-                    might identify gaps without disguising uncertainty as knowledge.
+                    agricultural, hydrological and public-health data—and asks how transparent,
+                    responsible AI might identify gaps without disguising uncertainty as knowledge.
                 </p>
             </header>
             <section className="mt-20 grid grid-cols-[.8fr_1.7fr] gap-10">
@@ -248,7 +264,7 @@ function ProjectTile({ c, r }: { c: number; r: number }) {
                     [
                         '01',
                         'What the project does',
-                        'Combines eight sources into a country-year view. Radial and temporal summaries make overlap—and its absence—visible.'
+                        `Combines ${meta.datasetOrder.length} sources into a country-year view. Radial and temporal summaries make overlap—and its absence—visible.`
                     ],
                     [
                         '02',
@@ -505,9 +521,22 @@ function ConceptGraphic() {
 
 function DatasetsTile({ c, r }: { c: number; r: number }) {
     const localColumn = c - DATASETS_START_COL;
+    const cardRows = Array.from({ length: Math.ceil(meta.datasetOrder.length / 2) }, (_, row) =>
+        meta.datasetOrder.slice(row * 2, row * 2 + 2)
+    );
+    // Six two-card rows fit into the four physical wall rows as 1 + 2 + 2 + 1.
+    // Every visible card begins and ends inside a single 1920×1080 display.
+    const rowLayout = [
+        { top: 420, scale: 0.78 },
+        { top: 1112, scale: 0.6 },
+        { top: 1636, scale: 0.6 },
+        { top: 2192, scale: 0.6 },
+        { top: 2716, scale: 0.6 },
+        { top: 3240, scale: 0.78 }
+    ];
     return (
         <div
-            className="overflow-hidden bg-[radial-gradient(120%_55%_at_50%_0%,#17334a_0%,#0f1620_68%)] px-24 py-24 text-[#e7edf3]"
+            className="relative overflow-hidden bg-[radial-gradient(120%_55%_at_50%_0%,#17334a_0%,#0f1620_68%)] px-24 py-24 text-[#e7edf3]"
             style={{
                 width: DATASETS_COLS * SCREEN_WIDTH,
                 height: WALL_ROWS * SCREEN_HEIGHT,
@@ -519,19 +548,34 @@ function DatasetsTile({ c, r }: { c: number; r: number }) {
                     Source reference
                 </span>
                 <h1 className="mt-4 text-[128px] leading-none font-bold tracking-[-.04em]">
-                    Eight datasets, three evidence domains.
+                    {meta.datasetOrder.length} datasets, {meta.categoryOrder.length} evidence
+                    domains.
                 </h1>
                 <p className="mt-7 text-3xl leading-relaxed text-[#9fb0c0]">
                     Coverage summaries preserve each provider's units, licences and limitations. Bar
-                    height uses a logarithmic scale.
+                    height uses a logarithmic scale. Missing country-year records mean missing data,
+                    not confirmed zero observations.
                 </p>
             </header>
-            <div className="mt-14 grid grid-cols-2 gap-7">
-                {meta.datasetOrder.map((id) => (
-                    <DatasetCard key={id} id={id} />
-                ))}
+            <div className="absolute top-0 right-24 left-24">
+                {cardRows.map((ids, row) => {
+                    const layout = rowLayout[row];
+                    return (
+                        <div
+                            key={ids.join('-')}
+                            className="absolute grid w-full grid-cols-2 gap-7"
+                            style={{ top: layout.top }}
+                        >
+                            {ids.map((id) => (
+                                <div key={id} style={{ height: 820 * layout.scale }}>
+                                    <DatasetCard id={id} scale={layout.scale} />
+                                </div>
+                            ))}
+                        </div>
+                    );
+                })}
             </div>
-            <footer className="mt-8 rounded-xl border-l-8 border-[#f0bd4f] bg-[#131d29] px-8 py-6 text-2xl text-[#9fb0c0]">
+            <footer className="absolute top-[3950px] right-24 left-24 rounded-xl border-l-8 border-[#f0bd4f] bg-[#131d29] px-8 py-6 text-2xl text-[#9fb0c0]">
                 Missing country-year records mean missing data, not confirmed zero observations.
                 Always consult the original provider before reuse.
             </footer>
@@ -539,13 +583,20 @@ function DatasetsTile({ c, r }: { c: number; r: number }) {
     );
 }
 
-function DatasetCard({ id }: { id: string }) {
-    const dataset = datasets[id];
+function DatasetCard({ id, scale }: { id: string; scale: number }) {
+    const includeEstimates = useWallStore((state) => state.includeLsmsEstimates);
+    const dataset = (datasetsForEstimates(includeEstimates) as Record<string, Dataset>)[id];
     const reference = DATASET_REFERENCE[id];
     return (
         <article
             className="relative h-[820px] overflow-hidden rounded-[26px] border border-[#2c3e50] bg-[linear-gradient(145deg,#172230,#131d29)] p-9 pl-12"
-            style={{ borderLeftColor: dataset.color, borderLeftWidth: 10 }}
+            style={{
+                borderLeftColor: dataset.color,
+                borderLeftWidth: 10,
+                width: `${100 / scale}%`,
+                transform: `scale(${scale})`,
+                transformOrigin: 'top left'
+            }}
         >
             <div className="flex items-center justify-between">
                 <strong className="text-5xl" style={{ color: dataset.color }}>
@@ -559,7 +610,14 @@ function DatasetCard({ id }: { id: string }) {
             <Histogram dataset={dataset} />
             <dl className="mt-5 space-y-4 text-2xl">
                 <ReferenceRow label="Provider" value={reference.provider} />
-                <ReferenceRow label="Description" value={reference.description} />
+                <ReferenceRow
+                    label="Description"
+                    value={
+                        id === 'lsms'
+                            ? (dataset.description ?? reference.description)
+                            : reference.description
+                    }
+                />
                 <ReferenceRow label="Licence" value={reference.licence} />
                 <ReferenceRow label="Source" value={reference.source} />
             </dl>
@@ -584,6 +642,12 @@ function Histogram({ dataset }: { dataset: Dataset }) {
     const years = Object.keys(totals)
         .map(Number)
         .sort((a, b) => a - b);
+    if (!years.length)
+        return (
+            <p className="mt-5 rounded-2xl bg-[#0e1722] p-5 text-2xl text-[#9fb0c0]">
+                Verified reporting counts are unavailable.
+            </p>
+        );
     const first = years[0],
         last = years.at(-1) ?? first;
     const maximum = Math.max(1, ...Object.values(totals));
@@ -626,62 +690,154 @@ function Histogram({ dataset }: { dataset: Dataset }) {
     );
 }
 
-type DonutSeries = { id: string; keys: string[]; selected: boolean };
+type DonutSeries = {
+    id: string;
+    keys: string[];
+    selected: boolean;
+    label: string;
+    code: string;
+    color: string;
+    crop?: string;
+    hydro?: string;
+};
 const MARKER_POSITIONS: Record<string, [number, number]> = { RUS: [90, 61.5], USA: [-98.6, 39.8] };
+const DATASET_CODES: Record<string, string> = {
+    biotime: 'BT',
+    living_planet: 'LPD',
+    predicts: 'PRED',
+    gbif: 'GBIF',
+    lsms_isa: 'ISA',
+    agriculture_maps: 'AGRI',
+    hydro_maps: 'HYD',
+    grdc: 'GRDC',
+    dhs: 'DHS',
+    mics: 'MICS',
+    lsms: 'LSMS'
+};
+const DOMAIN_CODES: Record<string, string> = {
+    Ecology: 'ECO',
+    Agriculture: 'AGRI',
+    Hydrology: 'HYD',
+    'Public Health': 'HEALTH'
+};
+const CROP_CODES: Record<string, string> = {
+    wheat: 'WHT',
+    rice: 'RICE',
+    maize: 'MAIZ',
+    barley: 'BAR',
+    sorghum: 'SORG',
+    potato: 'POT',
+    cassava: 'CASS',
+    soybean: 'SOY',
+    groundnut: 'GND',
+    oil_palm: 'OIL',
+    sunflower: 'SUN',
+    rapeseed: 'RAPE',
+    sugarcane: 'CANE',
+    sugarbeet: 'BEET',
+    cotton: 'COT'
+};
+const HYDRO_CODES: Record<string, string> = {
+    overall: 'HYD',
+    precipitation: 'RAIN',
+    cropland_extent: 'CROP',
+    irrigated_area_extent: 'IRR'
+};
+
+function donutSeries(state: ScreenStoreState): DonutSeries[] {
+    if (state.detailedAgriculture)
+        return scoreModel.agriculture.cropOrder.map((crop) => ({
+            id: `crop:${crop}`,
+            crop,
+            keys: [],
+            selected: true,
+            label: scoreModel.agriculture.crops[crop].name,
+            code: CROP_CODES[crop] ?? crop.slice(0, 4).toUpperCase(),
+            color: scoreModel.agriculture.crops[crop].color
+        }));
+    if (state.detailedHydro)
+        return [
+            {
+                id: 'hydro:overall',
+                hydro: 'overall',
+                keys: [],
+                selected: true,
+                label: scoreModel.hydro.aggregate.name,
+                code: HYDRO_CODES.overall,
+                color: '#d6ac54'
+            },
+            ...scoreModel.hydro.variableOrder.map((variable, index) => ({
+                id: `hydro:${variable}`,
+                hydro: variable,
+                keys: [],
+                selected: true,
+                label: scoreModel.hydro.variables[variable].name,
+                code: HYDRO_CODES[variable] ?? variable.slice(0, 4).toUpperCase(),
+                color: ['#4ca6d9', '#69b578', '#c99a43'][index % 3]
+            }))
+        ];
+    const mapAggregateSelected =
+        state.selectedDatasets.includes('agriculture_maps') ||
+        state.selectedDatasets.includes('hydro_maps');
+    return state.groupedByDomain && !mapAggregateSelected
+        ? meta.categoryOrder
+              .map((domain) => {
+                  const keys = meta.datasetOrder.filter((id) => datasets[id].domain === domain);
+                  return {
+                      id: `domain:${domain}`,
+                      keys,
+                      label: domain,
+                      code: DOMAIN_CODES[domain] ?? domain.slice(0, 4).toUpperCase(),
+                      color: datasets[keys[0]]?.color ?? '#d6ac54',
+                      selected: keys.some((id) => state.selectedDatasets.includes(id))
+                  };
+              })
+              .filter((item) => item.keys.length)
+        : meta.datasetOrder.map((id) => ({
+              id,
+              keys: [id],
+              label: datasets[id].name,
+              code: DATASET_CODES[id] ?? id.slice(0, 4).toUpperCase(),
+              color: datasets[id].color,
+              selected: state.selectedDatasets.includes(id)
+          }));
+}
+
+function donutValue(
+    item: DonutSeries,
+    iso: string,
+    state: ScreenStoreState,
+    from: number,
+    to: number
+): MetricResult {
+    const model = modelForEstimates(state.includeLsmsEstimates);
+    return item.crop
+        ? model.cropValue(iso, item.crop, state.agricultureMetric, from, to)
+        : item.hydro
+          ? model.hydroValue(iso, item.hydro, state.hydroMetric, from, to)
+          : model.seriesValue(
+                item.keys.filter((id) => state.selectedDatasets.includes(id)),
+                iso,
+                from,
+                to,
+                state.agricultureAggregation
+            );
+}
 
 function MapDonuts({ state, zoom }: { state: ScreenStoreState; zoom: number }) {
     const model = useMemo(() => {
-        const series: DonutSeries[] = state.groupedByDomain
-            ? meta.categoryOrder
-                  .map((domain) => {
-                      const keys = meta.datasetOrder.filter((id) => datasets[id].domain === domain);
-                      return {
-                          id: `domain:${domain}`,
-                          keys,
-                          selected: keys.some((id) => state.selectedDatasets.includes(id))
-                      };
-                  })
-                  .filter((item) => item.keys.length)
-            : meta.datasetOrder.map((id) => ({
-                  id,
-                  keys: [id],
-                  selected: state.selectedDatasets.includes(id)
-              }));
+        const series = donutSeries(state);
         const features = world.features.filter((feature) => feature.id in datasets.dhs.records);
-        const count = (item: DonutSeries, iso: string, year?: number) =>
-            item.keys.reduce((sum, id) => {
-                if (!state.selectedDatasets.includes(id)) return sum;
-                const records = datasets[id].records[iso] ?? {};
-                return (
-                    sum +
-                    (year === undefined
-                        ? countRecords(records, state.yearFrom, state.yearTo)
-                        : Number(records[String(year)] ?? 0))
-                );
-            }, 0);
-        const maxima = Object.fromEntries(
-            series.map((item) => [
-                item.id,
-                Math.max(
-                    1,
-                    ...features.flatMap((feature) =>
-                        state.yearlyHistograms
-                            ? Array.from(
-                                  { length: state.yearTo - state.yearFrom + 1 },
-                                  (_, index) => count(item, feature.id, state.yearFrom + index)
-                              )
-                            : [count(item, feature.id)]
-                    )
-                )
-            ])
-        );
-        return { series, features, count, maxima };
+        return { series, features };
     }, [
         state.groupedByDomain,
         state.selectedDatasets,
         state.yearFrom,
         state.yearTo,
-        state.yearlyHistograms
+        state.yearlyHistograms,
+        state.detailedAgriculture,
+        state.detailedHydro,
+        state.hydroMetric
     ]);
     const baseSize = Math.max(170, Math.min(340, 170 + (zoom - 4) * 45));
     return (
@@ -707,8 +863,6 @@ function MapDonuts({ state, zoom }: { state: ScreenStoreState; zoom: number }) {
                             recessed={state.countries.length > 0 && !selected}
                             state={state}
                             series={model.series}
-                            count={model.count}
-                            maxima={model.maxima}
                         />
                     </Marker>
                 );
@@ -724,9 +878,7 @@ function CountryDonut({
     selected,
     recessed,
     state,
-    series,
-    count,
-    maxima
+    series
 }: {
     iso: string;
     name: string;
@@ -735,12 +887,12 @@ function CountryDonut({
     recessed: boolean;
     state: ScreenStoreState;
     series: DonutSeries[];
-    count: (series: DonutSeries, iso: string, year?: number) => number;
-    maxima: Record<string, number>;
 }) {
     const paths: React.ReactNode[] = [];
+    const labels: React.ReactNode[] = [];
     series.forEach((item, index) => {
         const sector = sectorAngles(series, index, datasets);
+        labels.push(<SectorCode key={`label-${item.id}`} item={item} sector={sector} />);
         if (!item.selected) {
             paths.push(
                 <path
@@ -755,32 +907,57 @@ function CountryDonut({
             return;
         }
         if (!state.yearlyHistograms) {
-            const value = count(item, iso);
+            const value = donutValue(item, iso, state, state.yearFrom, state.yearTo);
+            const metric = item.crop
+                ? state.agricultureMetric
+                : item.hydro
+                  ? state.hydroMetric
+                  : item.keys[0] === 'hydro_maps'
+                    ? 'dispersion'
+                    : item.keys[0] === 'agriculture_maps'
+                      ? state.agricultureAggregation
+                      : 'coverage';
             paths.push(
                 <path
                     key={item.id}
                     d={ringPath(sector.start, sector.end)}
-                    fill={assessmentColor(value, maxima[item.id])}
+                    fill={scoreModel.color(value.value, metric)}
                     stroke="#172230"
                     strokeWidth=".7"
-                />
+                >
+                    <title>
+                        {item.label}: {scoreModel.format(value, metric)}
+                    </title>
+                </path>
             );
             return;
         }
         const years = state.yearTo - state.yearFrom + 1;
         const bucket = (sector.end - sector.start) / years;
         for (let year = state.yearFrom; year <= state.yearTo; year++) {
-            const value = count(item, iso, year);
-            if (!value) continue;
+            const value = donutValue(item, iso, state, year, year);
+            const metric = item.crop
+                ? state.agricultureMetric
+                : item.hydro
+                  ? state.hydroMetric
+                  : item.keys[0] === 'hydro_maps'
+                    ? 'dispersion'
+                    : item.keys[0] === 'agriculture_maps'
+                      ? state.agricultureAggregation
+                      : 'coverage';
             const start = sector.start + (year - state.yearFrom) * bucket;
             paths.push(
                 <path
                     key={`${item.id}-${year}`}
                     d={ringPath(start, Math.min(sector.end, start + Math.max(0.08, bucket - 0.08)))}
-                    fill={assessmentColor(value, maxima[item.id])}
+                    fill={scoreModel.color(value.value, metric)}
                     stroke="#172230"
                     strokeWidth=".14"
-                />
+                >
+                    <title>
+                        {year} · {item.label}: {scoreModel.format(value, metric)}
+                    </title>
+                </path>
             );
         }
     });
@@ -792,6 +969,7 @@ function CountryDonut({
             <svg className="size-full" viewBox="0 0 60 60" aria-hidden="true">
                 <circle cx="30" cy="30" r="28" fill="#172230" />
                 {paths}
+                {labels}
                 <circle
                     cx="30"
                     cy="30"
@@ -811,89 +989,186 @@ function CountryDonut({
     );
 }
 
-function MapLegend({ state }: { state: ScreenStoreState }) {
-    const series = state.groupedByDomain
-        ? meta.categoryOrder
-              .map((domain) => ({
-                  label: domain,
-                  keys: meta.datasetOrder.filter((id) => datasets[id].domain === domain)
-              }))
-              .filter((item) => item.keys.length)
-        : meta.datasetOrder.map((id) => ({ label: datasets[id].name, keys: [id] }));
+function SectorCode({
+    item,
+    sector
+}: {
+    item: DonutSeries;
+    sector: { start: number; end: number };
+}) {
+    const [x, y] = polar(20.5, (sector.start + sector.end) / 2);
     return (
-        <aside className="pointer-events-none absolute top-10 left-10 z-30 w-[820px] rounded-[28px] border border-[#536577] bg-[#0f1620]/95 p-9 text-[#e7edf3] shadow-2xl">
-            <span className="text-xl font-extrabold tracking-[.16em] text-[#5ec5ff] uppercase">
+        <text
+            x={x}
+            y={y}
+            textAnchor="middle"
+            dominantBaseline="central"
+            fill="#ffffff"
+            stroke="#101923"
+            strokeWidth=".7"
+            paintOrder="stroke"
+            fontSize="3.2"
+            fontWeight="700"
+        >
+            {item.code}
+        </text>
+    );
+}
+
+function MapLegend({ state }: { state: ScreenStoreState }) {
+    const series = donutSeries(state);
+    const metricLegends = (
+        state.detailedAgriculture
+            ? [
+                  {
+                      label: scoreModel.metrics[state.agricultureMetric].label,
+                      metric: state.agricultureMetric
+                  }
+              ]
+            : state.detailedHydro
+              ? [{ label: scoreModel.metrics[state.hydroMetric].label, metric: state.hydroMetric }]
+              : [
+                    { label: 'Record-source coverage', metric: 'coverage' },
+                    ...(state.selectedDatasets.includes('agriculture_maps')
+                        ? [
+                              {
+                                  label: `Agricultural maps · ${scoreModel.metrics[state.agricultureAggregation].label}`,
+                                  metric: state.agricultureAggregation
+                              }
+                          ]
+                        : []),
+                    ...(state.selectedDatasets.includes('hydro_maps')
+                        ? [
+                              {
+                                  label: `Hydrology maps · ${scoreModel.metrics.dispersion.label}`,
+                                  metric: 'dispersion'
+                              }
+                          ]
+                        : [])
+                ]
+    ) as Array<{ label: string; metric: AgricultureMetric }>;
+    const primaryMetric = metricLegends[0].metric;
+    const metricInfo = scoreModel.metrics[primaryMetric];
+    return (
+        <aside className="pointer-events-none absolute top-8 left-8 z-30 w-[820px] rounded-[28px] border border-[#536577] bg-[#0f1620]/95 p-6 text-[#e7edf3] shadow-2xl">
+            <span className="text-lg font-extrabold tracking-[.16em] text-[#5ec5ff] uppercase">
                 Map legend
             </span>
-            <h2 className="mt-2 text-4xl font-semibold">How to read each donut</h2>
-            <div className="mt-7 grid grid-cols-[220px_1fr] items-center gap-8">
+            <h2 className="mt-1 text-3xl font-semibold">
+                {state.detailedAgriculture || state.detailedHydro
+                    ? metricInfo.label
+                    : 'How to read each donut'}
+            </h2>
+            <div className="mt-4 grid grid-cols-[150px_1fr] items-center gap-5">
                 <svg
-                    className="size-[220px]"
+                    className="size-[150px]"
                     viewBox="0 0 60 60"
                     role="img"
                     aria-label="Example radial dataset sectors"
                 >
                     <circle cx="30" cy="30" r="28" fill="#172230" />
                     {series.map((item, index) => {
-                        const angle = sectorAngles(
-                            series.map((entry, position) => ({
-                                id: String(position),
-                                keys: entry.keys,
-                                selected: true
-                            })),
-                            index,
-                            datasets
-                        );
+                        const angle = sectorAngles(series, index, datasets);
                         return (
-                            <path
-                                key={item.label}
-                                d={ringPath(angle.start, angle.end)}
-                                fill={datasets[item.keys[0]].color}
-                                stroke="#172230"
-                                strokeWidth=".7"
-                            />
+                            <g key={item.label}>
+                                <path
+                                    d={ringPath(angle.start, angle.end)}
+                                    fill={item.color}
+                                    stroke="#172230"
+                                    strokeWidth=".7"
+                                />
+                                <SectorCode item={item} sector={angle} />
+                            </g>
                         );
                     })}
                     <circle cx="30" cy="30" r="13" fill="#101923" stroke="#607287" />
                 </svg>
                 <div>
-                    <p className="text-2xl leading-relaxed text-[#c3ced8]">
+                    <p className="text-xl leading-relaxed text-[#c3ced8]">
                         Each radial sector represents{' '}
-                        {state.groupedByDomain ? 'one data category' : 'one dataset'}. The centre
-                        names the country.
+                        {state.detailedAgriculture
+                            ? 'one crop'
+                            : state.detailedHydro
+                              ? 'one hydrology comparison'
+                              : state.groupedByDomain
+                                ? 'one data category'
+                                : 'one dataset'}
+                        . The centre names the country.
                     </p>
-                    <p className="mt-3 text-xl text-[#9fb0c0]">
+                    <p className="mt-2 text-lg text-[#9fb0c0]">
                         {state.yearlyHistograms
-                            ? 'Each sector is split into annual bins; missing bins have no records.'
+                            ? 'Each sector is split into annual bins; grey bins are unavailable.'
                             : 'Each sector summarises the selected time window.'}
                     </p>
                 </div>
             </div>
-            <div className="mt-7 grid grid-cols-2 gap-x-7 gap-y-3">
+            <div className="mt-5 grid grid-cols-2 gap-x-6 gap-y-2">
                 {series.map((item) => (
-                    <div key={item.label} className="flex items-center gap-3 text-xl">
+                    <div key={item.label} className="flex items-center gap-2 text-base">
                         <span className="flex gap-1">
+                            {(item.crop || item.hydro) && (
+                                <i
+                                    className="size-3 rounded-sm"
+                                    style={{ background: item.color }}
+                                />
+                            )}
                             {item.keys.map((id) => (
                                 <i
                                     key={id}
-                                    className="size-4 rounded-sm"
+                                    className="size-3 rounded-sm"
                                     style={{ background: datasets[id].color }}
                                 />
                             ))}
                         </span>
-                        <span>{item.label}</span>
+                        <span>
+                            <b className="mr-2 text-[#e7edf3]">{item.code}</b>
+                            {item.label}
+                        </span>
                     </div>
                 ))}
             </div>
-            <div className="mt-8 h-5 rounded-full bg-[linear-gradient(90deg,#d73027,#fee08b,#1a9850)]" />
-            <div className="mt-2 flex justify-between text-lg text-[#9fb0c0]">
-                <span>Lower relative coverage</span>
-                <span>Higher relative coverage</span>
+            <div
+                className={`mt-5 grid gap-4 ${metricLegends.length > 1 ? 'grid-cols-3' : 'grid-cols-1'}`}
+            >
+                {metricLegends.map(({ label, metric }) => {
+                    const info = scoreModel.metrics[metric];
+                    const maximum = scoreModel.maxima[metric];
+                    return (
+                        <div key={`${label}-${metric}`}>
+                            <p className="mb-1 min-h-10 text-sm leading-tight font-semibold text-[#c3ced8]">
+                                {label}
+                            </p>
+                            <div
+                                className="h-4 rounded-full"
+                                style={{
+                                    background: `linear-gradient(90deg,${scoreModel.color(0, metric)},${scoreModel.color((maximum || 1) / 2, metric)},${scoreModel.color(maximum || 1, metric)})`
+                                }}
+                            />
+                            <div className="mt-1 flex justify-between gap-2 text-xs text-[#9fb0c0]">
+                                <span>0 {info.unit}</span>
+                                <span>
+                                    {maximum
+                                        ? `${maximum.toFixed(2)} ${info.unit}`
+                                        : 'No available values'}
+                                </span>
+                            </div>
+                        </div>
+                    );
+                })}
             </div>
-            <p className="mt-5 flex items-center gap-3 text-xl text-[#9fb0c0]">
-                <i className="size-5 rounded bg-[#4b5663]" /> Grey sectors mean no records or a
-                source that is switched off.
+            <p className="mt-4 flex items-center gap-2 text-base text-[#9fb0c0]">
+                <i className="size-4 rounded bg-[#4b5663]" /> Grey sectors are unavailable or
+                switched off.
             </p>
+            {(state.detailedAgriculture || state.detailedHydro) && (
+                <p className="mt-2 text-base text-[#9fb0c0]">{metricInfo.note}</p>
+            )}
+            {state.detailedAgriculture && (
+                <p className="mt-2 text-base text-[#9fb0c0]">{scoreModel.agriculture.reason}</p>
+            )}
+            {state.detailedHydro && (
+                <p className="mt-2 text-base text-[#9fb0c0]">{scoreModel.hydro.reason}</p>
+            )}
         </aside>
     );
 }
@@ -949,9 +1224,11 @@ function MiniControllerQr() {
 
 function sectorAngles(series: DonutSeries[], index: number, source: Record<string, Dataset>) {
     const size = 360 / series.length;
-    const domain = source[series[index].keys[0]].domain;
-    const previous = source[series[(index + series.length - 1) % series.length].keys[0]].domain;
-    const next = source[series[(index + 1) % series.length].keys[0]].domain;
+    const category = (item: DonutSeries) =>
+        item.crop ? 'Agriculture' : item.hydro ? 'Hydrology' : source[item.keys[0]].domain;
+    const domain = category(series[index]);
+    const previous = category(series[(index + series.length - 1) % series.length]);
+    const next = category(series[(index + 1) % series.length]);
     const categoryGaps = series.length > meta.categoryOrder.length;
     return {
         start: index * size + (categoryGaps && domain !== previous ? 8 : 1),
@@ -969,14 +1246,6 @@ function ringPath(start: number, end: number) {
         innerStart = polar(14, start),
         large = end - start > 180 ? 1 : 0;
     return `M${outerStart.join(' ')} A27 27 0 ${large} 1 ${outerEnd.join(' ')} L${innerEnd.join(' ')} A14 14 0 ${large} 0 ${innerStart.join(' ')} Z`;
-}
-function assessmentColor(value: number, maximum: number) {
-    if (!value || !maximum) return '#4b5663';
-    const score = Math.log1p(value) / Math.log1p(maximum);
-    const start = score <= 0.5 ? [215, 48, 39] : [254, 224, 139],
-        end = score <= 0.5 ? [254, 224, 139] : [26, 152, 80],
-        amount = score <= 0.5 ? score * 2 : (score - 0.5) * 2;
-    return `rgb(${start.map((channel, index) => Math.round(channel + (end[index] - channel) * amount)).join(',')})`;
 }
 function featureCenter(coordinates: unknown): [number, number] {
     const points: number[][] = [];
@@ -1043,63 +1312,213 @@ function DetailsTile({ c, r, state }: { c: number; r: number; state: ScreenStore
 }
 
 function CountryDetails({ iso, state }: { iso: string; state: ScreenStoreState }) {
+    const datasets = datasetsForEstimates(state.includeLsmsEstimates) as Record<string, Dataset>;
+    if (state.detailedAgriculture)
+        return (
+            <article className="relative mx-24 h-[3680px] min-w-0 overflow-hidden rounded-[32px] border border-[#2c3e50] bg-[#131d29] p-9">
+                <h2 className="text-5xl font-semibold">{countryName(iso)}</h2>
+                <div className="mt-10">
+                    <CoverageFormula mapMetric />
+                </div>
+                <p className="mt-6 line-clamp-2 text-xl leading-relaxed text-[#9fb0c0]">
+                    {scoreModel.metrics[state.agricultureMetric].note}
+                </p>
+                <div className="absolute inset-x-9 top-[880px] grid grid-cols-3 gap-4">
+                    {scoreModel.agriculture.cropOrder.map((crop) => (
+                        <CompactCropMetric key={crop} iso={iso} state={state} crop={crop} />
+                    ))}
+                </div>
+            </article>
+        );
+    if (state.detailedHydro)
+        return (
+            <article className="relative mx-24 h-[3680px] min-w-0 overflow-hidden rounded-[32px] border border-[#2c3e50] bg-[#131d29] p-9">
+                <h2 className="text-5xl font-semibold">{countryName(iso)}</h2>
+                <div className="mt-10">
+                    <CoverageFormula mapMetric />
+                </div>
+                <p className="mt-6 line-clamp-2 text-xl leading-relaxed text-[#9fb0c0]">
+                    {scoreModel.metrics[state.hydroMetric].note}
+                </p>
+                <div className="absolute inset-x-9 top-[880px] grid grid-cols-2 gap-5">
+                    {['overall', ...scoreModel.hydro.variableOrder].map((variable) => (
+                        <CompactHydroMetric
+                            key={variable}
+                            iso={iso}
+                            state={state}
+                            variable={variable}
+                        />
+                    ))}
+                </div>
+            </article>
+        );
     const rows = state.selectedDatasets.map((id) => ({
         id,
         dataset: datasets[id],
-        count: countRecords(datasets[id]?.records[iso], state.yearFrom, state.yearTo)
+        count: countRecords(datasets[id]?.records[iso], state.yearFrom, state.yearTo),
+        score: modelForEstimates(state.includeLsmsEstimates).datasetValue(
+            id,
+            iso,
+            state.yearFrom,
+            state.yearTo,
+            state.agricultureAggregation
+        )
     }));
     const total = rows.reduce((sum, row) => sum + row.count, 0);
-    const gaps = rows.filter((row) => !row.count);
+    const assessed = rows.filter((row) => row.score.value !== null);
+    const gaps = assessed.filter((row) => row.score.value! < 0.33);
     const domains = meta.categoryOrder
         .map((domain) => ({ domain, rows: rows.filter((row) => row.dataset.domain === domain) }))
         .filter((group) => group.rows.length);
     return (
-        <article className="mx-24 min-h-[3500px] min-w-0 rounded-[32px] border border-[#2c3e50] bg-[#131d29] p-9">
-            <h2 className="pr-8 text-6xl leading-tight font-semibold">{countryName(iso)}</h2>
-            <p className="mt-3 text-2xl text-[#9fb0c0]">
-                {total.toLocaleString()} selected{' '}
-                {rows.length === 1 ? (rows[0].dataset.unit ?? 'records') : 'records'}
-            </p>
-            <p className="mt-2 text-xl text-[#5ec5ff]">
-                Selected by {state.countryAttribution[iso] ?? 'Presenter'}
-            </p>
-            <section className="mt-8 rounded-2xl border-l-8 border-[#5ec5ff] bg-[#172230] p-6">
-                <h3 className="text-2xl font-semibold">
+        <article className="relative mx-24 h-[3680px] min-w-0 overflow-hidden rounded-[32px] border border-[#2c3e50] bg-[#131d29] p-9">
+            <header>
+                <h2 className="pr-8 text-5xl leading-tight font-semibold">{countryName(iso)}</h2>
+                <p className="mt-3 text-xl text-[#9fb0c0]">
+                    {total.toLocaleString()} selected{' '}
+                    {rows.length === 1 ? (rows[0].dataset.unit ?? 'records') : 'records'}
+                </p>
+                <p className="mt-1 text-lg text-[#5ec5ff]">
+                    Selected by {state.countryAttribution[iso] ?? 'Presenter'}
+                </p>
+            </header>
+            <div className="mt-10">
+                <CoverageFormula />
+            </div>
+            <section className="mt-10 rounded-2xl border-l-8 border-[#5ec5ff] bg-[#172230] px-5 py-4">
+                <h3 className="text-xl font-semibold">
                     {gaps.length
                         ? 'Coverage gaps across selected sources'
-                        : 'Broad coverage across selected sources'}
+                        : assessed.length
+                          ? 'Broad coverage across selected sources'
+                          : 'Coverage unavailable'}
                 </h3>
-                <p className="mt-3 text-xl leading-relaxed text-[#9fb0c0]">
+                <p className="mt-2 text-lg leading-relaxed text-[#9fb0c0]">
                     {gaps.length
-                        ? `No records in this window: ${gaps.map((row) => row.dataset.name).join(', ')}.`
-                        : 'Every selected source has records in this time window.'}
+                        ? `Lower relative coverage: ${gaps.map((row) => row.dataset.name).join(', ')}.`
+                        : assessed.length
+                          ? 'No selected source falls in the lower third of the coverage scale.'
+                          : 'No verified results for the selected sources and years.'}
                 </p>
             </section>
-            <div className="mt-8 space-y-7">
-                {state.groupedByDomain
-                    ? domains.map((group) => (
-                          <DomainDetail
-                              key={group.domain}
-                              domain={group.domain}
-                              rows={group.rows}
-                              iso={iso}
-                              state={state}
-                          />
-                      ))
-                    : rows.map((row) => (
-                          <DatasetDetail
-                              key={row.id}
-                              id={row.id}
-                              dataset={row.dataset}
-                              iso={iso}
-                              count={row.count}
-                              state={state}
-                          />
-                      ))}
+            <div>
+                {domains.map((group) => (
+                    <div key={group.domain} className={countryDomainSlot(group.domain)}>
+                        <DomainDetail
+                            domain={group.domain}
+                            rows={group.rows}
+                            iso={iso}
+                            state={state}
+                        />
+                    </div>
+                ))}
             </div>
         </article>
     );
 }
+
+function CoverageFormula({ mapMetric = false }: { mapMetric?: boolean }) {
+    return (
+        <section className="rounded-2xl border border-[#2c3e50] bg-[#101923] px-5 py-4 text-[#9fb0c0]">
+            <p className="text-xl leading-relaxed">
+                Coverage compares each record dataset with the DHS-country pool: how many counted
+                units it has per million km² and how consistently it appears across the selected
+                years. α is fixed at 0.6 and β at 0.4.
+            </p>
+            <p className="mt-2 text-lg leading-relaxed text-[#c3d2df]">
+                coverage score = α × log(1 + units per million km²) ÷ log(1 + highest pool density)
+                + β × years with units ÷ selected years
+            </p>
+            {mapMetric && (
+                <p className="mt-2 text-lg leading-relaxed text-[#73889b]">
+                    The map values below use the selected comparison metric, not this coverage
+                    score.
+                </p>
+            )}
+        </section>
+    );
+}
+
+function countryDomainSlot(domain: string) {
+    switch (domain) {
+        case 'Ecology':
+            return 'absolute inset-x-9 top-[880px] h-[920px]';
+        case 'Agriculture':
+            return 'absolute top-[1960px] bottom-[980px] left-9 w-[calc(50%-28px)]';
+        case 'Hydrology':
+            return 'absolute top-[1960px] right-9 bottom-[980px] w-[calc(50%-28px)]';
+        case 'Public Health':
+            return 'absolute inset-x-9 top-[3040px] bottom-9';
+        default:
+            return 'absolute inset-x-9 top-[3040px] bottom-9';
+    }
+}
+
+function CompactCropMetric({
+    iso,
+    state,
+    crop
+}: {
+    iso: string;
+    state: ScreenStoreState;
+    crop: string;
+}) {
+    const source = scoreModel.agriculture.crops[crop];
+    const value = scoreModel.cropValue(
+        iso,
+        crop,
+        state.agricultureMetric,
+        state.yearFrom,
+        state.yearTo
+    );
+    return (
+        <section className="min-w-0 rounded-2xl border border-[#2c3e50] bg-[#101923] px-5 py-4">
+            <h3 className="truncate text-2xl font-semibold" title={source.name}>
+                {source.name}
+            </h3>
+            <p className="mt-2 text-3xl font-semibold text-[#5ec5ff]">
+                {scoreModel.format(value, state.agricultureMetric)}
+            </p>
+            <p className="mt-1 text-lg text-[#9fb0c0]">
+                {value.available} of {value.expected} years with results
+            </p>
+        </section>
+    );
+}
+
+function CompactHydroMetric({
+    iso,
+    state,
+    variable
+}: {
+    iso: string;
+    state: ScreenStoreState;
+    variable: string;
+}) {
+    const source =
+        variable === 'overall' ? scoreModel.hydro.aggregate : scoreModel.hydro.variables[variable];
+    const value = scoreModel.hydroValue(
+        iso,
+        variable,
+        state.hydroMetric,
+        state.yearFrom,
+        state.yearTo
+    );
+    return (
+        <section className="min-w-0 rounded-2xl border border-[#2c3e50] bg-[#101923] px-5 py-4">
+            <h3 className="truncate text-2xl font-semibold" title={source.name}>
+                {source.name}
+            </h3>
+            <p className="mt-2 text-3xl font-semibold text-[#5ec5ff]">
+                {scoreModel.format(value, state.hydroMetric)}
+            </p>
+            <p className="mt-1 text-lg text-[#9fb0c0]">
+                {value.available} of {value.expected} years with results
+            </p>
+        </section>
+    );
+}
+
 function DomainDetail({
     domain,
     rows,
@@ -1107,7 +1526,7 @@ function DomainDetail({
     state
 }: {
     domain: string;
-    rows: Array<{ id: string; dataset: Dataset; count: number }>;
+    rows: Array<{ id: string; dataset: Dataset; count: number; score: MetricResult }>;
     iso: string;
     state: ScreenStoreState;
 }) {
@@ -1115,13 +1534,17 @@ function DomainDetail({
         { length: state.yearTo - state.yearFrom + 1 },
         (_, index) => state.yearFrom + index
     );
-    const yearly = years.map((year) =>
-        rows.reduce((sum, row) => sum + Number(row.dataset.records[iso]?.[String(year)] ?? 0), 0)
+    const total = rows.reduce((sum, row) => sum + row.count, 0);
+    const model = modelForEstimates(state.includeLsmsEstimates);
+    const score = model.seriesValue(
+        rows.map((row) => row.id),
+        iso,
+        state.yearFrom,
+        state.yearTo,
+        state.agricultureAggregation
     );
-    const maximum = Math.max(1, ...yearly),
-        total = rows.reduce((sum, row) => sum + row.count, 0);
     return (
-        <section className="border-t border-[#2c3e50] pt-6">
+        <section className="h-full overflow-hidden rounded-2xl border border-[#2c3e50] bg-[#101923] px-6 py-5">
             <h3 className="flex items-center gap-4 text-4xl font-semibold">
                 <span className="flex gap-2">
                     {rows.map((row) => (
@@ -1137,43 +1560,48 @@ function DomainDetail({
             <p className="mt-3 text-2xl text-[#9fb0c0]">
                 {total.toLocaleString()}{' '}
                 {rows.length === 1 ? (rows[0].dataset.unit ?? 'records') : 'records'} in this window
+                → {model.formatCoverageScore(score)}
             </p>
             <div className="mt-5 flex h-9 gap-[2px] overflow-hidden rounded bg-[#101821]">
-                {years.map((year, index) => (
-                    <i
-                        key={year}
-                        className="min-w-0 flex-1"
-                        style={{
-                            background: rows[0].dataset.color,
-                            opacity: yearly[index] ? 0.25 + (0.75 * yearly[index]) / maximum : 0
-                        }}
-                    />
-                ))}
+                {years.map((year) => {
+                    const annual = model.seriesValue(
+                        rows.map((row) => row.id),
+                        iso,
+                        year,
+                        year,
+                        state.agricultureAggregation
+                    );
+                    return (
+                        <i
+                            key={year}
+                            className="min-w-0 flex-1"
+                            style={{ background: model.color(annual.value, 'coverage') }}
+                        />
+                    );
+                })}
             </div>
             <div className="mt-2 flex justify-between text-lg text-[#9fb0c0]">
                 <span>{state.yearFrom}</span>
                 <span>{state.yearTo}</span>
             </div>
-            <details open className="mt-5 rounded-2xl border border-[#2c3e50] bg-[#101923] px-6">
-                <summary className="cursor-pointer py-5 text-xl font-semibold text-[#5ec5ff]">
-                    Dataset details
-                </summary>
-                <div className="pb-6">
-                    {rows.map((row) => (
-                        <DatasetDetail
-                            key={row.id}
-                            id={row.id}
-                            dataset={row.dataset}
-                            iso={iso}
-                            count={row.count}
-                            state={state}
-                        />
-                    ))}
-                </div>
-            </details>
+            <div
+                className={`mt-5 grid gap-4 ${domain === 'Ecology' ? 'grid-cols-2' : domain === 'Public Health' ? 'grid-cols-3' : 'grid-cols-1'}`}
+            >
+                {rows.map((row) => (
+                    <DatasetDetail
+                        key={row.id}
+                        id={row.id}
+                        dataset={row.dataset}
+                        iso={iso}
+                        count={row.count}
+                        state={state}
+                    />
+                ))}
+            </div>
         </section>
     );
 }
+
 function DatasetDetail({
     id,
     dataset,
@@ -1188,42 +1616,48 @@ function DatasetDetail({
     state: ScreenStoreState;
 }) {
     if (id === 'dhs') return <DhsSurveyYears dataset={dataset} iso={iso} state={state} />;
-    const yearly = dataset.records[iso] ?? {};
     const years = Array.from(
         { length: state.yearTo - state.yearFrom + 1 },
         (_, i) => state.yearFrom + i
     );
-    const maximum = Math.max(1, ...years.map((year) => yearly[String(year)] ?? 0));
+    const model = modelForEstimates(state.includeLsmsEstimates);
+    const score = model.datasetValue(
+        id,
+        iso,
+        state.yearFrom,
+        state.yearTo,
+        state.agricultureAggregation
+    );
     return (
-        <section className="border-t border-[#2c3e50] pt-6">
-            <h3 className="flex items-center gap-4 text-3xl font-semibold">
+        <section className="min-w-0 rounded-xl border border-[#2c3e50] bg-[#131d29] px-4 py-4">
+            <h3 className="flex items-center gap-3 text-3xl font-semibold">
                 <i className="size-5 rounded" style={{ background: dataset.color }} />
                 {dataset.name}
             </h3>
-            <p className="mt-3 text-2xl text-[#9fb0c0]">
-                {count.toLocaleString()} {dataset.unit ?? 'records'} in this window
+            <p className="mt-2 text-xl text-[#9fb0c0]">
+                {count.toLocaleString()} {dataset.unit ?? 'records'} in this window →{' '}
+                {model.formatCoverageScore(score)}
             </p>
-            <p className="mt-2 text-xl leading-relaxed text-[#73889b]">
+            <p className="mt-2 line-clamp-2 text-lg leading-relaxed text-[#73889b]">
                 {dataset.description ?? DATASET_REFERENCE[id]?.description}
             </p>
-            <div className="mt-5 flex h-9 gap-[2px] overflow-hidden rounded bg-[#101821]">
+            <div className="mt-4 flex h-7 gap-[2px] overflow-hidden rounded bg-[#101821]">
                 {years.map((year) => {
-                    const value = yearly[String(year)] ?? 0;
+                    const value = model.datasetValue(
+                        id,
+                        iso,
+                        year,
+                        year,
+                        state.agricultureAggregation
+                    );
                     return (
                         <i
                             key={year}
                             className="min-w-0 flex-1"
-                            style={{
-                                background: dataset.color,
-                                opacity: value ? 0.25 + (0.75 * value) / maximum : 0
-                            }}
+                            style={{ background: model.color(value.value, 'coverage') }}
                         />
                     );
                 })}
-            </div>
-            <div className="mt-2 flex justify-between text-lg text-[#9fb0c0]">
-                <span>{state.yearFrom}</span>
-                <span>{state.yearTo}</span>
             </div>
         </section>
     );
@@ -1241,57 +1675,46 @@ function DhsSurveyYears({
     const years = (dataset.surveyYears?.[iso] ?? []).filter(
         (entry) => entry.year >= state.yearFrom && entry.year <= state.yearTo
     );
+    const model = modelForEstimates(state.includeLsmsEstimates);
+    const score = model.datasetValue(
+        'dhs',
+        iso,
+        state.yearFrom,
+        state.yearTo,
+        state.agricultureAggregation
+    );
     return (
-        <section className="border-t border-[#2c3e50] pt-6">
-            <h3 className="flex items-center gap-4 text-3xl font-semibold">
+        <section className="min-w-0 rounded-xl border border-[#2c3e50] bg-[#131d29] px-4 py-4">
+            <h3 className="flex items-center gap-3 text-3xl font-semibold">
                 <i className="size-5 rounded" style={{ background: dataset.color }} />
                 DHS
             </h3>
-            <p className="mt-3 text-2xl text-[#9fb0c0]">Survey years in this window</p>
-            {years.length ? (
-                <ul
-                    className="mt-4 flex list-none flex-wrap gap-3 p-0"
-                    aria-label="DHS survey years"
-                >
-                    {years.map((entry) => (
-                        <li
-                            key={entry.year}
-                            className={`rounded-lg border px-4 py-3 text-2xl ${
-                                entry.nutrition
-                                    ? 'border-[#55c271] bg-[#183b2a] text-[#c8f5d5]'
-                                    : 'border-[#2c3e50] text-[#9fb0c0]'
-                            }`}
-                            title={`${entry.surveyCount} survey${entry.surveyCount === 1 ? '' : 's'} (${entry.surveyTypes.join(', ')}); ${
-                                entry.nutrition
-                                    ? `Nutrition: ${entry.nutritionTopics.join('; ')}`
-                                    : 'Nutrition not confirmed in DHS metadata'
-                            }`}
-                        >
-                            {entry.label}
-                            {entry.nutrition && (
-                                <span className="ml-2 text-xl font-semibold">Nutrition</span>
-                            )}
-                        </li>
-                    ))}
-                </ul>
-            ) : (
-                <p className="mt-4 text-xl text-[#9fb0c0]">No DHS surveys in this window.</p>
-            )}
-            <p className="mt-3 text-xl leading-relaxed text-[#9fb0c0]">
-                {dataset.nutritionDefinition}.
+            <p className="mt-2 text-xl text-[#9fb0c0]">
+                {years.length} survey{years.length === 1 ? '' : 's'} in this window →{' '}
+                {model.formatCoverageScore(score)}
             </p>
-            <p className="mt-3 text-xl leading-relaxed text-[#9fb0c0]">
-                Survey ranges show fieldwork years; filters and charts use the principal survey
-                year. Each survey counts once, regardless of its individual or household files.
-            </p>
+            <div className="mt-3 flex flex-wrap gap-3">
+                {years.map((entry) => (
+                    <span
+                        key={entry.year}
+                        className={`rounded-lg border px-4 py-2 text-xl ${entry.nutrition ? 'border-[#55c271] bg-[#183b2a] text-[#c8f5d5]' : 'border-[#2c3e50] text-[#9fb0c0]'}`}
+                    >
+                        {entry.label}
+                        {entry.nutrition ? ' · nutrition' : ''}
+                    </span>
+                ))}
+                {!years.length && (
+                    <span className="text-xl text-[#9fb0c0]">No DHS surveys in this window.</span>
+                )}
+            </div>
         </section>
     );
 }
-
 function countryName(iso: string) {
     return world.features.find((feature) => feature.id === iso)?.properties.name ?? iso;
 }
 function buildCoverage(state: ScreenStoreState) {
+    const datasets = datasetsForEstimates(state.includeLsmsEstimates) as Record<string, Dataset>;
     const totals = new globalThis.Map<string, number>();
     for (const feature of world.features)
         totals.set(

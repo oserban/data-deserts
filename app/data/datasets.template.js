@@ -44,6 +44,43 @@ window.AGGREGATED_RECORDS = {
   }
 };
 
+// Generated from reviewed census observations and qualifying allocation comparisons.
+// Absent observations/metrics have no numeric placeholder. Measured CV=0 is valid.
+// The real payload lists all 15 supported crops, even when evidence is unavailable.
+window.AGRICULTURE = {
+  schemaVersion: 1,
+  status: "unavailable",
+  reason: "Verified census evidence linked to map countries is not yet available.",
+  defaultMetric: "dispersion",
+  defaultAggregation: "dispersion",
+  cropOrder: ["<crop>"],
+  records: {}, // Deduplicated reporting admin units: ISO3 -> year -> count.
+  effective_resolution_km: {}, // ISO3 -> year -> crop -> km or null.
+  crops: {
+    "<crop>": {
+      name: "<crop name>", color: "#d6ac54", records: {},
+      metrics: {} // ISO3 -> year -> {dispersion, resolution, complete, crosswalkExactness}.
+    }
+  }
+};
+
+// Generated only from the three approved independent map comparisons:
+// precipitation (ERA5-Land/CHIRPS), cropland extent (ESA CCI/MIRCA), and
+// irrigated extent (ESA CCI/MIRCA). Rainfed extent is explicitly excluded.
+window.HYDRO = {
+  schemaVersion: 1,
+  status: "unavailable",
+  reason: "Hydro comparison rasters have not been processed yet.",
+  variableOrder: ["precipitation", "cropland_extent", "irrigated_area_extent"],
+  variables: {
+    "<variable>": {
+      name: "<display name>",
+      metrics: {} // ISO3 -> year -> {dispersion, resolution, allocationSimilarity, complete}
+    }
+  },
+  excluded: { rainfed_area_extent: "ESA CCI Medium Resolution Land Cover has no defensible rainfed class." }
+};
+
 window.META = {
   "datasetOrder": ["<dataset_key>"],
   "categoryOrder": ["<category>"],

@@ -23,7 +23,7 @@
     <section class="legend-section">
       <h2>Legend</h2>
       <div id="datasetLegend"></div>
-      <div class="legend-ends"><span>Within-source records per area</span><span id="legendMax">Grey = no records</span></div>
+      <div class="legend-ends"><span>Selected metric</span><span id="legendMax">Grey = unavailable or off</span></div>
     </section>
 
     <section class="filters-section">
@@ -47,11 +47,45 @@
           title="Group radial sectors by category" aria-label="Group radial sectors by category"
           aria-pressed="false"><span class="state-icon category-icon" aria-hidden="true"><i></i><i></i><i></i></span><b>Categories</b></button>
       </div>
+      <button type="button" class="agriculture-toggle" id="agricultureToggle" aria-pressed="false">
+        <span aria-hidden="true">♧</span> Detailed agriculture scores
+      </button>
+      <button type="button" class="agriculture-toggle" id="hydroToggle" aria-pressed="false" title="Show precipitation, cropland and irrigated-area map comparisons">
+        <span aria-hidden="true">≈</span> Detailed hydrology scores
+      </button>
     </section>
 
     <details class="advanced">
       <summary>Advanced filtering</summary>
       <section>
+        <label class="agriculture-option" id="agricultureMetricControl" hidden>Crop metric
+          <select id="agricultureMetric">
+            <option value="dispersion">Dispersion (coefficient of variation)</option>
+            <option value="resolution">Effective resolution (km)</option>
+            <option value="similarity">Allocation similarity</option>
+            <option value="availability">Source availability</option>
+            <option value="coverage">Reporting-unit coverage</option>
+          </select>
+        </label>
+        <label class="agriculture-option" id="hydroMetricControl" hidden>Hydrology metric
+          <select id="hydroMetric">
+            <option value="dispersion">Dispersion (coefficient of variation)</option>
+            <option value="resolution">Effective resolution (km)</option>
+            <option value="similarity">Allocation similarity</option>
+            <option value="availability">Source availability</option>
+          </select>
+        </label>
+        <label class="agriculture-option" id="agricultureAggregationControl">Agricultural map metric
+          <select id="agricultureAggregation">
+            <option value="dispersion">Dispersion (coefficient of variation)</option>
+            <option value="resolution">Effective resolution (km)</option>
+            <option value="similarity">Allocation similarity</option>
+            <option value="availability">Source availability</option>
+            <option value="coverage">Reporting-unit coverage</option>
+          </select>
+        </label>
+        <label class="agriculture-option"><input type="checkbox" id="lsmsEstimatesToggle"> Include LSMS estimates</label>
+        <p class="timeline-note">Add estimated household members where an observed roster count is unavailable.</p>
         <h2>Categories and datasets</h2>
         <div id="datasetFilters"></div>
         <div class="filter-actions">
@@ -60,11 +94,6 @@
         </div>
       </section>
     </details>
-
-    <section>
-      <h2>Other dataset types</h2>
-      <div class="placeholder"><i></i><span><b>Hydrology</b><small>Coming later</small></span></div>
-    </section>
 
     <div class="credit">
       <h2>About the project</h2>
@@ -135,10 +164,21 @@
       <div class="modal-card coverage-card">
         <button class="close" id="coverageClose" aria-label="Close coverage examples">×</button>
         <h2 id="coverageTitle">Examples of relative coverage</h2>
-        <div class="coverage-caveat"><strong>Coverage is only one dimension of data quality.</strong>
-          These examples describe record availability per unit area and over time. They do not assess accuracy,
-          representativeness, sampling design, accessibility, fitness for purpose, or research need.</div>
+        <div class="coverage-caveat"><strong>Coverage shows how much information each dataset has for a country.</strong>
+          For each dataset, it combines its counted unit per million km² (60%) with the share of selected years
+          that have records (40%). The counted unit differs by dataset, such as records, surveys, or station-years.</div>
         <div id="coverageExamples"></div>
+      </div>
+    </div>
+
+    <div id="coverageInfoModal" class="modal-overlay" role="dialog" aria-modal="true"
+      aria-labelledby="coverageInfoTitle" aria-hidden="true">
+      <div class="modal-card coverage-info-card">
+        <button class="close" id="coverageInfoClose" aria-label="Close coverage score information">×</button>
+        <h2 id="coverageInfoTitle">How coverage scores are calculated</h2>
+        <p>A coverage score compares countries within one dataset. The general formula is: <strong>score = α × relative density + β × share of selected years with a count</strong>. α is fixed at 0.6 and β is fixed at 0.4.</p>
+        <p>Relative density is log(1 + counted units per 1 million km²) divided by log(1 + the highest density in the DHS-country pool). The logarithmic scale prevents a very large count from overwhelming the comparison. A higher score means more of that dataset's counted unit, over more selected years. Scores do not compare the amount or quality of evidence between datasets.</p>
+        <div id="coverageMethodList" class="coverage-method-list"></div>
       </div>
     </div>
 
@@ -165,6 +205,12 @@
             CC0, CC BY 4.0, or CC BY-NC 4.0 terms; the applicable attribution and non-commercial
             conditions must be followed.</p>
             <a href="https://www.gbif.org/terms" target="_blank" rel="noopener">GBIF terms</a></section>
+          <section><h3>Global Runoff Data Centre (GRDC)</h3><p>The Global Runoff Data Centre,
+            56068 Koblenz, Germany, and contributing national services. Counts are observed
+            station-years, not discharge measurements or unique stations across a time window.
+            Research use and derived statistical products require attribution; downloaded
+            discharge data must not be redistributed. Only country/year coverage counts are shown.</p>
+            <a href="https://grdc.bafg.de/data/data_portal/" target="_blank" rel="noopener">GRDC source and terms</a></section>
           <section><h3>Demographic and Health Surveys (DHS)</h3><p>The DHS Program. Access is
             project-specific; DHS microdata must not be redistributed or exposed through a data tool.</p>
             <a href="https://dhsprogram.com/data/terms-of-use.cfm" target="_blank" rel="noopener">Terms of use</a></section>
@@ -205,6 +251,7 @@
   <script src="vendor/leaflet.js"></script>
   <script src="data/world.js"></script>
   <script src="data/datasets.js"></script>
+  <script src="score-model.js"></script>
   <script src="app.js"></script>
   <script src="tour.js"></script>
 </body>

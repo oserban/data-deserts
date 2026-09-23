@@ -7,6 +7,24 @@ export type DatasetReference = {
 };
 
 export const DATASET_REFERENCE: Record<string, DatasetReference> = {
+    agriculture_maps: {
+        title: 'Harvested-area census evidence and allocation dispersion',
+        provider: 'MapSPAM, FAO GAEZ, MIRCA2000 and MIRCA-OS',
+        description:
+            'Coverage counts reporting administrative units once per year across crops and products. Detailed crop views separate native-cell dispersion, allocation similarity, effective resolution and source availability. These describe allocation patterns and map availability; no product is used as a reference.',
+        licence:
+            'Consult and cite each original product and census source; this derived summary does not replace their terms.',
+        source: 'https://doi.org/10.1038/s41597-024-04313-w'
+    },
+    hydro_maps: {
+        title: 'Hydrology map support',
+        provider: 'ERA5-Land, CHIRPS, ESA CCI Land Cover and MIRCA-OS',
+        description:
+            'Precomputed country-level dispersion across the three approved hydrology map comparisons. It is not a record-coverage score.',
+        licence:
+            'Consult and cite each original data product; this derived summary does not replace their terms.',
+        source: 'https://cds.climate.copernicus.eu/datasets/reanalysis-era5-land-monthly-means'
+    },
     biotime: {
         title: 'BioTIME biodiversity time-series database',
         provider: 'BioTIME Project, University of St Andrews',
@@ -50,6 +68,47 @@ export const DATASET_REFERENCE: Record<string, DatasetReference> = {
         licence:
             'World Bank Microdata Library study-level access types, licences, and citation requirements apply.',
         source: 'https://www.worldbank.org/en/programs/lsms/initiatives/lsms-ISA'
+    },
+    mapspam: {
+        title: 'MapSPAM 2010',
+        provider: 'IFPRI',
+        description:
+            'Counts represent documented census-reporting administrative units, deduplicated across crops within each year. Allocation dispersion and map country effective resolution describe spatial allocation; these products are not independent observations.',
+        licence: 'Consult the cited provider release and underlying census sources before reuse.',
+        source: 'https://www.mapspam.info/data/'
+    },
+    gaez: {
+        title: 'GAEZ Theme 5 and GAEZ+2015 harvested area',
+        provider: 'FAO and IIASA',
+        description:
+            'Counts represent documented census-reporting administrative units, deduplicated across crops within each year. Allocation dispersion and map country effective resolution describe spatial allocation; these products are not independent observations.',
+        licence: 'Consult the cited provider release and underlying census sources before reuse.',
+        source: 'https://www.fao.org/gaez/gaezv4/en'
+    },
+    mirca2000: {
+        title: 'MIRCA2000 harvested area',
+        provider: 'MIRCA research teams and contributing census agencies',
+        description:
+            'Counts represent documented census-reporting administrative units, deduplicated across crops within each year. Allocation dispersion and map country effective resolution describe spatial allocation; these products are not independent observations.',
+        licence: 'Consult the cited provider release and underlying census sources before reuse.',
+        source: 'https://zenodo.org/records/7422506'
+    },
+    mirca_os: {
+        title: 'MIRCA-OS harvested area',
+        provider: 'MIRCA research teams and contributing census agencies',
+        description:
+            'Counts represent documented census-reporting administrative units, deduplicated across crops within each year. Allocation dispersion and map country effective resolution describe spatial allocation; these products are not independent observations.',
+        licence: 'Consult the cited provider release and underlying census sources before reuse.',
+        source: 'https://doi.org/10.1038/s41597-024-04313-w'
+    },
+    grdc: {
+        title: 'Global Runoff Data Centre river-discharge coverage',
+        provider: 'The Global Runoff Data Centre, 56068 Koblenz, Germany, and national services',
+        description:
+            'Each station counts once per year with a valid daily or monthly observation. Zero flow is valid; missing values and duplicate station-years are excluded. Totals are station-years, not unique stations or discharge volume.',
+        licence:
+            'Research use and derived statistical products require attribution. Downloaded discharge data must not be redistributed; only country/year coverage counts are shown.',
+        source: 'https://grdc.bafg.de/data/data_portal/'
     },
     dhs: {
         title: 'Demographic and Health Surveys',

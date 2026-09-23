@@ -12,8 +12,9 @@ video wall. It uses the same architecture and technology choices as `template-ap
 - CrossWS for collaborative state synchronization
 - React 19 and Tailwind CSS
 
-It is self-contained and does not import, serve, or resolve files from the repository's static
-`app/` directory.
+It does not import, serve, or resolve files from the repository's static `app/` directory.
+The build bundles its own `src/lib/score-model.ts` and `score-logic.js`, so
+the production server needs no external source files.
 
 DHS uses the same Python-generated survey counts and nutrition metadata as the static app.
 Map and chart calculations count each available survey once. Country details list survey years
@@ -21,12 +22,34 @@ and highlight any confirmed nutrition topic, including feeding practices and mic
 Both grouped and individual dataset views respect the selected principal-year window.
 Run `python3 processing/fetch_dhs.py` from the repository root before building old participant data.
 
+The controller's **Include LSMS estimates** switch is on by default and synchronizes to all wall
+screens. It adds estimated household members from the [offline reviewed-study dictionary](../processing/resources/lsms_household_estimates.json)
+to LSMS counts, yearly bins, histograms and aggregate/category scores. Country details distinguish
+observed records from estimates. The switch is disabled in detailed agriculture mode and retains
+its setting when returning to the dataset view.
+
 PREDICTS combines the 2016 V1.1 site summaries and the November 2022 additions through the
 shared Python pipeline, counting unique source/study/block/site IDs by sampling midpoint year.
 
 The shared timeline begins at the earliest available DHS survey (currently 1985). Earlier
 records are excluded from both apps’ generated coverage data, summaries and chart scales.
 The cutoff is global, not the first DHS survey in each individual country.
+
+## Agriculture controls
+
+The overview includes one Crop agriculture sector. Its aggregate filter selects map availability
+across crops (default) or reporting-unit coverage. **Detailed agriculture scores**
+replaces the overview sectors with the 15 crops and offers dispersion (default), effective
+resolution in km, or reporting-unit coverage. Category grouping and overview dataset filters
+are disabled until this mode is switched off; previous selections are preserved.
+
+Annual bins work in every mode. Selected-window dispersion averages available yearly country
+values; resolution shows the coarsest available yearly value. Coverage uses 60% log-normalised
+reporting-unit density plus 40% years with reports. Missing agriculture results are grey and
+labelled unavailable, distinct from measured zero dispersion. The controller synchronises
+these options across wall screens. Supported census tables are linked to the map’s exact
+country polygons automatically, retaining source census-unit counts. Partial evidence and
+unresolved results are identified explicitly; see the [processing documentation](../processing/README.md#harvested-area-allocation-analysis).
 
 ## Run
 
@@ -169,7 +192,7 @@ panel. Wall constants live in
 
 ```text
 columns 0–1    original project information and visual design
-columns 2–3    eight source-reference cards and global year histograms
+columns 2–3    eleven source-reference cards and global year histograms
 columns 4–7    one seamless distributed MapLibre map
 columns 8–15   detached country-detail comparison experience
 rows 0–3       shared by all four regions

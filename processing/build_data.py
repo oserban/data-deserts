@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build static app data from ecology and household-survey datasets.
+"""Build static app data from ecology, hydrology and household-survey datasets.
 
 Reads country/year record counts from:
 
@@ -10,6 +10,7 @@ Reads country/year record counts from:
     data/mics.json
     data/gbif.json
     data/lsms_isa.json
+    data/grdc.json
     data/lsms.json
 
 Each input and the aggregate use the same shape:
@@ -29,19 +30,23 @@ Run from the repository root:
 """
 
 import json
+import copy
 import math
 import os
 
+from fetch_lsms import apply_estimates
 from data_deserts import load_geojson
 from fetch_predicts import RELEASES as PREDICTS_RELEASES
 from fetch_gbif import ALLOWED_BASIS_OF_RECORD
+from fetch_grdc import COUNTING_METHOD as GRDC_COUNTING_METHOD, UNIT as GRDC_UNIT
+from fetch_crop_allocation import METHOD as CROP_METHOD, UNIT as CROP_UNIT, CROPS, evidence_counts, MAP_BOUNDARIES, digest
 
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(HERE, "data")
 APP_DATA_DIR = os.path.join(HERE, "..", "app", "data")
 WALL_DATA_DIR = os.path.join(HERE, "..", "do-app-wall", "src", "data")
-BOUNDARIES_PATH = os.path.join(DATA_DIR, "world.raw.geojson")
+BOUNDARIES_PATH = str(MAP_BOUNDARIES)
 
 
 def ring_area(coordinates):
@@ -111,6 +116,15 @@ DATASET_DEFINITIONS = {
         "unit": "agricultural records",
         "color": "#e89b3c",
     },
+    "grdc": {
+        "name": "GRDC",
+        "file": "grdc.json",
+        "domain": "Hydrology",
+        "url": "https://grdc.bafg.de/data/data_portal/",
+        "description": "observed river-discharge station-years: each GRDC station counts once in each year with at least one valid daily or monthly observation; zero flow is valid, missing values are excluded, and overlapping files are deduplicated; multi-year totals are station-years, not unique stations or discharge volume",
+        "unit": GRDC_UNIT,
+        "color": "#38aee8",
+    },
     "dhs": {
         "name": "DHS",
         "file": "dhs.json",
@@ -142,7 +156,235 @@ DATASET_DEFINITIONS = {
 
 SCOPE_DATASETS = ["dhs"]
 ALLOW_UNMAPPED_DATASETS = {"dhs", "mics", "gbif", "lsms"}
-CATEGORY_ORDER = ["Ecology", "Agriculture", "Public Health"]
+CATEGORY_ORDER = ["Ecology", "Agriculture", "Hydrology", "Public Health"]
+
+CROP_DEFINITIONS = {
+    key: {"name": name, "file": key + ".json", "domain": "Agriculture", "url": url,
+          "unit": CROP_UNIT, "color": color,
+          "description": "documented census-reporting administrative units, deduplicated across crops and irrigation modes within each year; pixels and allocated calendar entries are not observations; allocation measures describe spatial allocation and do not select a reference product"}
+    for key, name, url, color in [
+        ("mapspam", "MapSPAM", "https://www.mapspam.info/data/", "#db8c35"),
+        ("gaez", "GAEZ actual area", "https://www.fao.org/gaez/gaezv4/en", "#c8ab45"),
+        ("mirca2000", "MIRCA2000", "https://zenodo.org/records/7422506", "#a2b04c"),
+        ("mirca_os", "MIRCA-OS", "https://doi.org/10.1038/s41597-024-04313-w", "#73af88"),
+    ]
+}
+
+AGRICULTURE_DEFINITION = {
+    "name": "Agricultural map support", "domain": "Agriculture", "color": "#d6ac54",
+    "url": "https://doi.org/10.1038/s41597-024-04313-w", "unit": CROP_UNIT,
+    "agricultureAggregate": True,
+    "description": "country-level map availability across crops by default; reporting-unit coverage remains available as an alternative aggregate",
+}
+HYDRO_DEFINITION = {
+    "name": "Hydrology map support", "domain": "Hydrology", "color": "#4ca6d9",
+    "url": "https://cds.climate.copernicus.eu/datasets/reanalysis-era5-land-monthly-means",
+    "unit": "map comparisons", "hydroAggregate": True,
+    "description": "precomputed country-level comparison of precipitation, cropland extent and irrigated-area maps; it is a map metric, not a record-coverage score",
+}
+
+
+def agriculture_payload(directory, valid_iso, expected_geometry_sha=None):
+    """Export counts and allocation measures separately; absence is never a zero CV.
+
+    Source census-unit identities remain distinct from the country analysis geometry. Evidence
+    from multiple products/crops must not inflate the aggregate observation count.
+    """
+    crops = {crop: {"name": crop.replace('_', ' ').capitalize(), "color": '#d6ac54',
+                    "records": {}, "metrics": {}} for crop in CROPS}
+    result = {"schemaVersion": 1, "cropOrder": list(crops), "crops": crops, "records": {},
+              "effective_resolution_km": {}, "aggregateMetrics": {},
+              "status": "unavailable", "reason": "Verified census evidence linked to map countries is not yet available.",
+              "defaultMetric": "dispersion", "defaultAggregation": "dispersion",
+              "dispersionDefinition": "Mean native-cell CV of country-normalised harvested-area shares; mean of available years in the selected window.",
+              "similarityDefinition": "Mean pairwise overlap of country-normalised allocation shares among available products. It compares map patterns and does not select a reference product.",
+              "sourceAvailabilityDefinition": "Available positive-area product maps divided by the eligible products for the crop/year. It does not compare map patterns.",
+              "resolutionDefinition": "Coarsest effective resolution among available years; missing years are not interpolated.",
+              "coverageDefinition": "0.6 × log1p(reporting units per million km²) / log1p(pool maximum density) + 0.4 × years with reports / selected years.",
+              "aggregateDefinition": "Per-country, per-year crop aggregates are precomputed from the available crop comparisons. Dispersion, similarity and source availability are arithmetic means across crops; effective resolution is the largest crop result."
+              }
+    path = os.path.join(directory, 'crop_allocation_report.json')
+    if not os.path.exists(path):
+        return result
+    with open(path, encoding='utf-8') as source:
+        report = json.load(source)
+    meta = report.get('_meta', {})
+    if meta.get('countingMethod') != CROP_METHOD or meta.get('unit') != CROP_UNIT:
+        raise ValueError('Unsupported agriculture evidence method')
+    geometry = meta.get('analysisGeometry', {})
+    if expected_geometry_sha is not None and (geometry.get('sha256') != expected_geometry_sha or
+                                               geometry.get('scope') != 'map country'):
+        raise ValueError('Agriculture geometry differs from dashboard map; rerun fetch_crop_allocation.py --reconcile-evidence')
+    result['analysisGeometry'] = geometry
+    evidence_counts(report['evidence'])  # Reject estimated or unsourced observations.
+    unit_sets, crop_sets = {}, {}
+    for row in report['evidence']:
+        iso, year, crop = row['country_iso3'], str(row['year']), row['crop']
+        if iso not in valid_iso or crop not in crops:
+            continue
+        unit = (int(row['admin_level']), str(row['admin_unit_id']))
+        unit_sets.setdefault((iso, year), set()).add(unit)
+        crop_sets.setdefault((crop, iso, year), set()).add(unit)
+    for (iso, year), units in unit_sets.items():
+        result['records'].setdefault(iso, {})[year] = len(units)
+    for (crop, iso, year), units in crop_sets.items():
+        crops[crop]['records'].setdefault(iso, {})[year] = len(units)
+    availability = {}
+    for row in report.get('source_availability', []):
+        iso, year, crop = row['country_iso3'], str(row['year']), row['crop']
+        if iso not in valid_iso or crop not in crops:
+            continue
+        key = (iso, year, crop)
+        if key in availability:
+            raise ValueError('Duplicate agriculture source availability')
+        value = row.get('source_availability')
+        if type(value) not in (int, float) or not math.isfinite(value) or not 0 <= value <= 1:
+            raise ValueError('Invalid agriculture source availability')
+        availability[key] = row
+    seen = set()
+    for row in report.get('effective_resolution', []):
+        iso, year, crop = row['country_iso3'], str(row['year']), row['crop']
+        if iso not in valid_iso or crop not in crops:
+            continue
+        key = (iso, year, crop)
+        if key in seen:
+            raise ValueError('Duplicate agriculture country/crop/year metric')
+        seen.add(key)
+        cv, resolution, similarity = (row.get('dispersion_at_native_cell'), row.get('effective_resolution_km'),
+                                      row.get('allocation_similarity'))
+        for label, value in [('dispersion', cv), ('effective resolution', resolution), ('allocation similarity', similarity)]:
+            if value is not None and (type(value) not in (int, float) or not math.isfinite(value) or
+                                      value < 0 or (label == 'effective resolution' and value == 0)):
+                raise ValueError('Invalid agriculture ' + label)
+        complete = row.get('complete', resolution is not None)
+        if type(complete) is not bool:
+            raise ValueError('Invalid agriculture completeness flag')
+        flag = row.get('crosswalk_exactness')
+        if flag not in ('exact', 'aggregated', 'approximate'):
+            raise ValueError('Missing agriculture crosswalk exactness')
+        crops[crop]['metrics'].setdefault(iso, {})[year] = {
+            'dispersion': cv if complete else None, 'resolution': resolution if complete else None,
+            'allocationSimilarity': similarity if complete else None,
+            'sourceAvailability': availability.get(key, {}).get('source_availability'),
+            'products': row.get('products', []), 'nProducts': row.get('n_products', 0),
+            'crosswalkExactness': flag, 'complete': complete,
+        }
+        result['effective_resolution_km'].setdefault(iso, {}).setdefault(year, {})[crop] = resolution if complete else None
+    for (iso, year, crop), row in availability.items():
+        metric = crops[crop]['metrics'].setdefault(iso, {}).setdefault(year, {
+            'dispersion': None, 'resolution': None, 'allocationSimilarity': None,
+            'sourceAvailability': None, 'products': [], 'nProducts': 0,
+            'crosswalkExactness': 'exact', 'complete': False,
+        })
+        metric['sourceAvailability'] = row['source_availability']
+        metric['products'] = row['products']
+        metric['nProducts'] = row['n_products']
+    # Precompute the country/year aggregate once.  The dashboard only reads
+    # these summaries; it never derives an agriculture score from rasters.
+    aggregate_values = {}
+    for crop in crops.values():
+        for iso, years in crop['metrics'].items():
+            for year, metric in years.items():
+                bucket = aggregate_values.setdefault(iso, {}).setdefault(year, {
+                    'dispersion': [], 'resolution': [], 'allocationSimilarity': [],
+                    'sourceAvailability': [], 'crosswalkExactness': []
+                })
+                if metric['complete']:
+                    for field in ('dispersion', 'resolution', 'allocationSimilarity'):
+                        if isinstance(metric.get(field), (int, float)) and math.isfinite(metric[field]):
+                            bucket[field].append(metric[field])
+                if isinstance(metric.get('sourceAvailability'), (int, float)) and math.isfinite(metric['sourceAvailability']):
+                    bucket['sourceAvailability'].append(metric['sourceAvailability'])
+                bucket['crosswalkExactness'].append(metric['crosswalkExactness'])
+    exactness_rank = {'exact': 0, 'aggregated': 1, 'approximate': 2}
+    for iso, years in aggregate_values.items():
+        result['aggregateMetrics'][iso] = {}
+        for year, values in years.items():
+            result['aggregateMetrics'][iso][year] = {
+                'dispersion': (sum(values['dispersion']) / len(values['dispersion'])
+                               if values['dispersion'] else None),
+                'resolution': max(values['resolution']) if values['resolution'] else None,
+                'allocationSimilarity': (sum(values['allocationSimilarity']) / len(values['allocationSimilarity'])
+                                         if values['allocationSimilarity'] else None),
+                'sourceAvailability': (sum(values['sourceAvailability']) / len(values['sourceAvailability'])
+                                       if values['sourceAvailability'] else None),
+                'nCrops': len(values['dispersion']),
+                'crosswalkExactness': max(values['crosswalkExactness'], key=lambda value: exactness_rank[value])
+                                      if values['crosswalkExactness'] else None,
+                'complete': bool(values['dispersion']),
+            }
+    if result['records'] or any(
+        value['dispersion'] is not None or value['resolution'] is not None or value['sourceAvailability'] is not None
+        for crop in crops.values() for years in crop['metrics'].values() for value in years.values()
+    ):
+        result.update(status='available', reason='Allocation scores compare country-normalised harvested-area shares. Source availability remains visible when a crop/year has fewer than two positive-area products.')
+        if (report.get('reconciliation') or {}).get('status') == 'partial':
+            result['reason'] = ('Partial census reconciliation: supported source tables only. '
+                                'Raster allocation measures remain available independently of the evidence table.')
+    return result
+
+
+def hydro_payload(directory, valid_iso):
+    """Expose validated hydro-map metrics without turning unavailable inputs into zeroes."""
+    result = {"schemaVersion": 1, "status": "unavailable",
+              "reason": "Hydro comparison rasters have not been processed yet.",
+              "defaultMetric": "dispersion", "variables": {},
+              "variableOrder": ["precipitation", "cropland_extent", "irrigated_area_extent"],
+              "excluded": {"rainfed_area_extent": "ESA CCI Medium Resolution Land Cover has no defensible rainfed class."}}
+    path = os.path.join(directory, "hydro_comparisons", "hydro_report.json")
+    if not os.path.exists(path):
+        return result
+    with open(path, encoding="utf-8") as source:
+        payload = json.load(source)
+    if payload.get("schemaVersion") != 1:
+        raise ValueError("Unsupported hydro comparison schema")
+    variables = payload.get("variables", {})
+    if set(variables) - set(result["variableOrder"]):
+        raise ValueError("Hydro report includes an unapproved comparison")
+    for key, value in variables.items():
+        if value.get("name") is None or not isinstance(value.get("metrics", {}), dict):
+            raise ValueError("Invalid hydro comparison payload")
+    result.update(payload)
+    return result
+
+
+def load_crop_sources(directory):
+    """Register only audited reporting counts; unavailable evidence is not zero."""
+    path = os.path.join(directory, "crop_allocation_report.json")
+    if not os.path.exists(path):
+        if any(os.path.exists(os.path.join(directory, d["file"])) for d in CROP_DEFINITIONS.values()):
+            raise ValueError("Crop evidence counts exist without their audit report")
+        return {}, {}
+    with open(path, encoding="utf-8") as source:
+        report = json.load(source)
+    meta = report["_meta"]
+    if meta.get("schemaVersion") != 1 or meta.get("countingMethod") != CROP_METHOD or meta.get("unit") != CROP_UNIT:
+        raise ValueError("Unsupported crop-allocation evidence method")
+    counts = evidence_counts(report["evidence"])
+    definitions, metadata = {}, {}
+    for key, definition in CROP_DEFINITIONS.items():
+        records = load_records(os.path.join(directory, definition["file"]))
+        if records != counts.get(key, {}):
+            raise ValueError("Crop reporting counts do not match evidence: " + key)
+        if not records:
+            continue
+        resolutions = {}
+        for row in report["effective_resolution"]:
+            iso, year, value = row["country_iso3"], str(row["year"]), row["effective_resolution_km"]
+            if value is not None and (not isinstance(value, (float, int)) or isinstance(value, bool)
+                                      or not math.isfinite(value) or value <= 0):
+                raise ValueError("Invalid crop effective resolution")
+            if iso in records and year in records[iso]:
+                resolutions.setdefault(iso, {}).setdefault(year, {})[row["crop"]] = value
+        definitions[key] = definition
+        metadata[key] = {
+            "coverage": {"countingMethod": CROP_METHOD, "independentProducts": False},
+            "crosswalk": [r for r in report["crosswalk"] if r["product"] == key],
+            "effective_resolution_km": resolutions,
+            "spatialSupport": {"display": "country summaries", "countryWeighting": meta["countryWeighting"],
+                               "tolerance": meta["tolerance"], "unknownResolution": "do not render a raster"},
+        }
+    return definitions, metadata
 
 
 def load_records(path):
@@ -181,6 +423,33 @@ def aggregate_records(datasets, allowed_iso=None):
         iso: dict(sorted(yearly.items()))
         for iso, yearly in sorted(aggregate.items())
     }
+
+
+def load_grdc_coverage(path, records):
+    """Validate yearly counts against deduplicated station-year provenance."""
+    with open(path, encoding="utf-8") as source:
+        report = json.load(source)
+    meta = report.get("_meta", {})
+    refresh = "Run python3 processing/fetch_grdc.py to refresh GRDC coverage."
+    if (meta.get("schemaVersion") != 1 or meta.get("unit") != GRDC_UNIT
+            or meta.get("countingMethod") != GRDC_COUNTING_METHOD):
+        raise ValueError("GRDC provenance has an unsupported counting method. " + refresh)
+    counts, seen = {}, set()
+    for station in report["stations"]:
+        station_id, iso, years = station["stationId"], station["iso3"], station["years"]
+        if not station_id or station_id in seen or len(set(years)) != len(years):
+            raise ValueError("Duplicate or missing GRDC station/year identity. " + refresh)
+        seen.add(station_id)
+        if any(type(year) is not int or not 1000 <= year <= 9999 for year in years):
+            raise ValueError("Invalid GRDC observation year. " + refresh)
+        if iso is not None and years:
+            yearly = counts.setdefault(iso, {})
+            for year in years:
+                yearly[str(year)] = yearly.get(str(year), 0) + 1
+    if counts != records or meta.get("stationYears") != sum(sum(y.values()) for y in counts.values()):
+        raise ValueError("GRDC counts do not match observed station-years in grdc_report.json. " + refresh)
+    return {"countingMethod": GRDC_COUNTING_METHOD, "minimumObservationsPerYear": 1,
+            "deduplication": "station ID and observation year", "zeroFlowIsValid": True}
 
 
 def load_dhs_coverage(path, records):
@@ -268,6 +537,39 @@ def load_gbif_filters(path, records):
     return filters
 
 
+def load_lsms_estimates(path, records, valid_iso):
+    """Reconstruct observed and estimated records separately from their audit."""
+    with open(path, encoding='utf-8') as source:
+        report = json.load(source)
+    observed, seen = {}, set()
+    for study in report['studies']:
+        if study['studyId'] in seen:
+            raise ValueError('Duplicate LSMS study in audit')
+        seen.add(study['studyId'])
+        count = study['participants']
+        if count is None:
+            continue
+        selected = [f for f in study['files'] if f['fileId'] == study['selectedFileId']]
+        if type(count) is not int or count <= 0 or len(selected) != 1 or selected[0]['caseCount'] != count:
+            raise ValueError('LSMS observed count differs from selected roster')
+        yearly = observed.setdefault(study['iso3'], {})
+        year = str(study['year'])
+        yearly[year] = yearly.get(year, 0) + count
+    if observed != records:
+        raise ValueError('LSMS counts differ from roster audit')
+    recalculated = copy.deepcopy(report['studies'])
+    estimates, provenance = apply_estimates(recalculated)
+    if (estimates != report['_meta'].get('estimatedRecords') or
+            provenance != report['_meta'].get('householdEstimation') or
+            any(a.get('householdEstimation') != b.get('householdEstimation') or
+                a.get('estimatedParticipants') != b.get('estimatedParticipants')
+                for a,b in zip(report['studies'], recalculated))):
+        raise ValueError('LSMS estimates are stale or differ from resource evidence; rerun fetch_lsms.py --reprocess-report processing/data/lsms_report.json')
+    return {'estimatedRecords': {iso:y for iso,y in estimates.items() if iso in valid_iso},
+            'householdEstimation': provenance,
+            'estimationDescription': 'Estimated household members = reviewed household rows × a cited household-size mean. These are not interview counts. Observed rosters always take priority.'}
+
+
 def dataset_summary(records):
     years = [int(year) for yearly in records.values() for year in yearly]
     return {
@@ -292,6 +594,9 @@ def restrict_to_dhs_timeline(datasets):
                 records[iso] = retained
         dataset["records"] = records
         dataset["summary"] = dataset_summary(records)
+        if 'estimatedRecords' in dataset:
+            dataset['estimatedRecords'] = {iso: kept for iso, yearly in dataset['estimatedRecords'].items()
+                if (kept := {year: count for year, count in yearly.items() if int(year) >= first_year})}
     return first_year
 
 
@@ -361,9 +666,43 @@ def main():
     world = export_world_map()
     valid_iso = {str(feature["id"]) for feature in world["features"]}
     datasets = {}
+    load_crop_sources(DATA_DIR)  # Validate per-product files against the same evidence audit.
+    agriculture = agriculture_payload(DATA_DIR, valid_iso, digest(MAP_BOUNDARIES))
+    hydro = hydro_payload(DATA_DIR, valid_iso)
+    definitions = {}
     for key, definition in DATASET_DEFINITIONS.items():
-        records = load_records(os.path.join(DATA_DIR, definition["file"]))
+        if key == "grdc":
+            definitions['hydro_maps'] = HYDRO_DEFINITION
+        definitions[key] = definition
+        if key == "lsms_isa":
+            definitions['agriculture_maps'] = AGRICULTURE_DEFINITION
+    # The sector sequence is also the clockwise donut sequence.  Keep domains
+    # contiguous, and put the two map-comparison aggregates at the shared
+    # Agriculture/Hydrology boundary so they can be read together.
+    definitions = {
+        key: definitions[key]
+        for key in sorted(
+            definitions,
+            key=lambda key: CATEGORY_ORDER.index(definitions[key]['domain']))
+    }
+    for key, definition in definitions.items():
+        records = (agriculture['records'] if key == 'agriculture_maps' else
+                   ({iso: {year: value.get('nComponents', 0) for year, value in years.items()}
+                     for iso, years in hydro.get('aggregate', {}).get('metrics', {}).items()} if key == 'hydro_maps' else
+                    load_records(os.path.join(DATA_DIR, definition["file"]))))
         metadata = {}
+        if key == 'agriculture_maps':
+            metadata['effective_resolution_km'] = agriculture['effective_resolution_km']
+            metadata['spatialSupport'] = {
+                'display': 'country summaries', 'countryWeighting': 'mean of nonzero blocks within map country',
+                'analysisGeometry': agriculture.get('analysisGeometry'),
+                'unknownResolution': 'do not render a raster',
+            }
+        if key == 'hydro_maps':
+            metadata['spatialSupport'] = {
+                'display': 'country summaries', 'countryWeighting': 'mean across available approved map comparisons',
+                'analysisGeometry': 'map country', 'unknownResolution': 'do not render a raster',
+            }
         if key == "dhs":
             survey_years, nutrition_definition = load_dhs_coverage(
                 os.path.join(DATA_DIR, "dhs_report.json"), records)
@@ -378,9 +717,14 @@ def main():
         if key == "gbif":
             metadata["filters"] = load_gbif_filters(
                 os.path.join(DATA_DIR, "gbif_report.json"), records)
+        if key == "lsms":
+            metadata.update(load_lsms_estimates(os.path.join(DATA_DIR, "lsms_report.json"), records, valid_iso))
+        if key == "grdc":
+            metadata["coverage"] = load_grdc_coverage(
+                os.path.join(DATA_DIR, "grdc_report.json"), records)
         unknown = sorted(set(records).difference(valid_iso))
         if unknown:
-            if key not in ALLOW_UNMAPPED_DATASETS:
+            if key not in ALLOW_UNMAPPED_DATASETS and key not in CROP_DEFINITIONS:
                 raise ValueError("%s contains ISO3 codes absent from the map: %s" %
                                  (definition["file"], ", ".join(unknown)))
             print("%s countries absent from the low-resolution map (omitted): %s" %
@@ -408,7 +752,7 @@ def main():
     aggregate = aggregate_records(datasets, allowed_iso=scope_iso)
     aggregate_summary = dataset_summary(aggregate)
     meta = {
-        "datasetOrder": list(DATASET_DEFINITIONS),
+        "datasetOrder": list(definitions),
         "categoryOrder": CATEGORY_ORDER,
         "datasetCount": len(datasets),
         "scopeDatasets": SCOPE_DATASETS,
@@ -422,10 +766,14 @@ def main():
         ("DATASETS", datasets),
         ("AGGREGATED_RECORDS", aggregate),
         ("META", meta),
+        ("AGRICULTURE", agriculture),
+        ("HYDRO", hydro),
     ])
     write_json(os.path.join(WALL_DATA_DIR, "datasets.json"), {
         "datasets": datasets,
         "meta": meta,
+        "agriculture": agriculture,
+        "hydro": hydro,
     })
 
     for key in meta["datasetOrder"]:

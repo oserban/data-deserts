@@ -11,7 +11,7 @@
     {
       target: ".legend-section",
       title: "Read the coverage charts",
-      description: "Each sector represents a dataset. Red to green shows lower to higher records per area, compared within the same source across countries. Grey means no records in the selected period."
+      description: "Each sector represents a dataset. Red to green shows coverage from record density and years with records. Detailed agriculture switches to crop sectors and the chosen metric; grey means unavailable."
     },
     {
       target: ".filters-section",

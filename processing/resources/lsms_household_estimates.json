@@ -1,0 +1,261 @@
+{
+  "schemaVersion": 1,
+  "version": "2026-09-21",
+  "unit": "members per household",
+  "description": "Reviewed household-size means for approximate LSMS household-member counts. Each entry is an approved fixed input for one study; it is not an observed participant count.",
+  "studies": {
+    "BEN_2021_EHCVM-2_v01_M": {
+      "countryIso3": "BEN",
+      "year": 2021,
+      "fileId": "F60",
+      "fileName": "ehcvm_welfare_ben2021",
+      "households": 8032,
+      "mean": 4.82,
+      "tier": "national_reference",
+      "referenceYear": 2021,
+      "sourceUrl": "https://population.un.org/household/assets/UNDESA_PD_2026_hh-size-composition.xlsx"
+    },
+    "BFA_2014_EMC_v01_M": {
+      "countryIso3": "BFA",
+      "year": 2014,
+      "fileId": "F94",
+      "fileName": "emc2014_welfare",
+      "households": 10411,
+      "mean": 5.92,
+      "tier": "national_reference",
+      "referenceYear": 2014,
+      "sourceUrl": "https://population.un.org/household/assets/UNDESA_PD_2026_hh-size-composition.xlsx"
+    },
+    "BGR_2003_MTHS_v01_M": {
+      "countryIso3": "BGR",
+      "year": 2003,
+      "fileId": "F4",
+      "fileName": "ns_m2",
+      "households": 3023,
+      "mean": 2.69,
+      "tier": "national_reference",
+      "referenceYear": 2001,
+      "sourceUrl": "https://population.un.org/household/assets/UNDESA_PD_2026_hh-size-composition.xlsx"
+    },
+    "CIV_2021_EHCVM-2_v01_M": {
+      "countryIso3": "CIV",
+      "year": 2021,
+      "fileId": "F58",
+      "fileName": "ehcvm_welfare_civ2021",
+      "households": 12965,
+      "mean": 4.38,
+      "tier": "national_reference",
+      "referenceYear": 2021,
+      "sourceUrl": "https://population.un.org/household/assets/UNDESA_PD_2026_hh-size-composition.xlsx"
+    },
+    "GHA_2009_GSPS_v01_M": {
+      "countryIso3": "GHA",
+      "year": 2009,
+      "fileId": "F124",
+      "fileName": "percapita_expenditure",
+      "households": 5009,
+      "mean": 3.75,
+      "tier": "national_reference",
+      "referenceYear": 2008,
+      "sourceUrl": "https://population.un.org/household/assets/UNDESA_PD_2026_hh-size-composition.xlsx"
+    },
+    "GNB_2021_EHCVM-2_v01_M": {
+      "countryIso3": "GNB",
+      "year": 2021,
+      "fileId": "F60",
+      "fileName": "ehcvm_welfare_gnb2021",
+      "households": 5351,
+      "mean": 6.81,
+      "tier": "national_reference",
+      "referenceYear": 2019,
+      "sourceUrl": "https://population.un.org/household/assets/UNDESA_PD_2026_hh-size-composition.xlsx"
+    },
+    "IND_1997_SLCUPB_v01_M": {
+      "countryIso3": "IND",
+      "year": 1997,
+      "fileId": "F1",
+      "fileName": "HHLIST",
+      "households": 2251,
+      "mean": 6.289,
+      "tier": "same_study_unweighted",
+      "referenceYear": 1997,
+      "sourceUrl": "https://microdata.worldbank.org/index.php/api/catalog/IND_1997_SLCUPB_v01_M/variables/V4"
+    },
+    "JAM_1989_SLC2_v01_M": {
+      "countryIso3": "JAM",
+      "year": 1989,
+      "fileId": "F25",
+      "fileName": "exp89_2",
+      "households": 3836,
+      "mean": 3.87,
+      "tier": "national_reference",
+      "referenceYear": 1991,
+      "sourceUrl": "https://population.un.org/household/assets/UNDESA_PD_2026_hh-size-composition.xlsx"
+    },
+    "JAM_1994_SLC_v01_M": {
+      "countryIso3": "JAM",
+      "year": 1994,
+      "fileId": "F51",
+      "fileName": "exp94",
+      "households": 1942,
+      "mean": 3.838,
+      "tier": "comparable_survey",
+      "referenceYear": 1996,
+      "sourceUrl": "https://microdata.worldbank.org/index.php/api/catalog/JAM_1996_SLC_v01_M/variables/V530"
+    },
+    "JAM_1996_SLC_v01_M": {
+      "countryIso3": "JAM",
+      "year": 1996,
+      "fileId": "F38",
+      "fileName": "EXP96",
+      "households": 1823,
+      "mean": 3.838,
+      "tier": "same_study_unweighted",
+      "referenceYear": 1996,
+      "sourceUrl": "https://microdata.worldbank.org/index.php/api/catalog/JAM_1996_SLC_v01_M/variables/V530"
+    },
+    "JAM_1998_SLC_v01_M": {
+      "countryIso3": "JAM",
+      "year": 1998,
+      "fileId": "F27",
+      "fileName": "EXP98",
+      "households": 7375,
+      "mean": 3.838,
+      "tier": "comparable_survey",
+      "referenceYear": 1996,
+      "sourceUrl": "https://microdata.worldbank.org/index.php/api/catalog/JAM_1996_SLC_v01_M/variables/V530"
+    },
+    "MLI_2014_EACI_v03_M": {
+      "countryIso3": "MLI",
+      "year": 2014,
+      "fileId": "F58",
+      "fileName": "eaci2014_agregatconso",
+      "households": 3804,
+      "mean": 8.41,
+      "tier": "national_reference",
+      "referenceYear": 2015,
+      "sourceUrl": "https://population.un.org/household/assets/UNDESA_PD_2026_hh-size-composition.xlsx"
+    },
+    "MLI_2021_EHCVM-2_v01_M": {
+      "countryIso3": "MLI",
+      "year": 2021,
+      "fileId": "F49",
+      "fileName": "ehcvm_welfare_mli2021",
+      "households": 6143,
+      "mean": 9.54,
+      "tier": "national_reference",
+      "referenceYear": 2021,
+      "sourceUrl": "https://population.un.org/household/assets/UNDESA_PD_2026_hh-size-composition.xlsx"
+    },
+    "NER_2021_EHCVM-2_v01_M": {
+      "countryIso3": "NER",
+      "year": 2021,
+      "fileId": "F54",
+      "fileName": "ehcvm_welfare_ner2021",
+      "households": 6622,
+      "mean": 6.38,
+      "tier": "national_reference",
+      "referenceYear": 2021,
+      "sourceUrl": "https://population.un.org/household/assets/UNDESA_PD_2026_hh-size-composition.xlsx"
+    },
+    "NGA_2010_GHSP-W1_v03_M": {
+      "countryIso3": "NGA",
+      "year": 2010,
+      "fileId": "F98",
+      "fileName": "cons_agg_wave1_visit1",
+      "households": 4933,
+      "mean": 5.506,
+      "tier": "same_study_unweighted",
+      "referenceYear": 2010,
+      "sourceUrl": "https://microdata.worldbank.org/index.php/api/catalog/NGA_2010_GHSP-W1_v03_M/variables/V2448"
+    },
+    "PAK_1991_IHS_v01_M": {
+      "countryIso3": "PAK",
+      "year": 1991,
+      "fileId": "F189",
+      "fileName": "PIHSEXPN",
+      "households": 4799,
+      "mean": 6.73,
+      "tier": "national_reference",
+      "referenceYear": 1991,
+      "sourceUrl": "https://population.un.org/household/assets/UNDESA_PD_2026_hh-size-composition.xlsx"
+    },
+    "PER_1985_ENNIV_v01_M": {
+      "countryIso3": "PER",
+      "year": 1985,
+      "fileId": "F65",
+      "fileName": "SIZE",
+      "households": 5108,
+      "mean": 5.155,
+      "tier": "same_study_unweighted",
+      "referenceYear": 1985,
+      "sourceUrl": "https://microdata.worldbank.org/index.php/api/catalog/PER_1985_ENNIV_v01_M/variables/V1407"
+    },
+    "PER_1990_ENNIV_v01_M": {
+      "countryIso3": "PER",
+      "year": 1990,
+      "fileId": "F2",
+      "fileName": "EXPEND",
+      "households": 1509,
+      "mean": 4.936,
+      "tier": "same_study_unweighted",
+      "referenceYear": 1990,
+      "sourceUrl": "https://microdata.worldbank.org/index.php/api/catalog/PER_1990_ENNIV_v01_M/variables/V13"
+    },
+    "SEN_2021_EHCVM-2_v01_M": {
+      "countryIso3": "SEN",
+      "year": 2021,
+      "fileId": "F58",
+      "fileName": "ehcvm_welfare_sen2021",
+      "households": 7120,
+      "mean": 8.45,
+      "tier": "national_reference",
+      "referenceYear": 2023,
+      "sourceUrl": "https://population.un.org/household/assets/UNDESA_PD_2026_hh-size-composition.xlsx"
+    },
+    "TGO_2021_EHCVM-2_v01_M": {
+      "countryIso3": "TGO",
+      "year": 2021,
+      "fileId": "F57",
+      "fileName": "ehcvm_welfare_tgo2021",
+      "households": 6462,
+      "mean": 4.58,
+      "tier": "national_reference",
+      "referenceYear": 2022,
+      "sourceUrl": "https://population.un.org/household/assets/UNDESA_PD_2026_hh-size-composition.xlsx"
+    },
+    "UGA_2010_UNPS_v03_M": {
+      "countryIso3": "UGA",
+      "year": 2010,
+      "fileId": "F99",
+      "fileName": "pov2010_11",
+      "households": 2655,
+      "mean": 4.75,
+      "tier": "national_reference",
+      "referenceYear": 2009,
+      "sourceUrl": "https://population.un.org/household/assets/UNDESA_PD_2026_hh-size-composition.xlsx"
+    },
+    "UGA_2013_UNPS_v02_M": {
+      "countryIso3": "UGA",
+      "year": 2013,
+      "fileId": "F1",
+      "fileName": "pov2013_14",
+      "households": 3118,
+      "mean": 4.74,
+      "tier": "national_reference",
+      "referenceYear": 2014,
+      "sourceUrl": "https://population.un.org/household/assets/UNDESA_PD_2026_hh-size-composition.xlsx"
+    },
+    "UGA_2015_UNPS_v02_M": {
+      "countryIso3": "UGA",
+      "year": 2015,
+      "fileId": "F114",
+      "fileName": "pov2015_16",
+      "households": 3145,
+      "mean": 4.93,
+      "tier": "national_reference",
+      "referenceYear": 2015,
+      "sourceUrl": "https://population.un.org/household/assets/UNDESA_PD_2026_hh-size-composition.xlsx"
+    }
+  }
+}

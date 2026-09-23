@@ -2,6 +2,8 @@
 (function () {
   "use strict";
 
+  var observedDatasets = window.DATASETS;
+  var DATASETS = observedDatasets;
   var datasetOrder = META.datasetOrder;
   var focusedCountry = null;
   var scopeDatasets = META.scopeDatasets || [META.scopeDataset];
@@ -11,8 +13,31 @@
   });
   var state = {
     yearFrom: META.yearMin, yearTo: META.yearMax, selected: {},
-    yearlyHistograms: false, groupedDonuts: false
+    yearlyHistograms: false, groupedDonuts: false, includeLsmsEstimates: true,
+    detailedAgriculture: false, detailedHydro: false, agricultureMetric: "dispersion", hydroMetric: "dispersion", agricultureAggregation: "dispersion"
   };
+  var estimatedDatasets = DataDesertsScores.withHouseholdEstimates(observedDatasets, Object.keys(scopeRecords));
+  var appliedEstimateMode = false;
+  var agricultureModel = DataDesertsScores.create(DATASETS,
+    typeof AGRICULTURE === "undefined" ? undefined : AGRICULTURE,
+    WORLD_GEOJSON.features, Object.keys(scopeRecords), typeof HYDRO === "undefined" ? undefined : HYDRO);
+
+  function agricultureSignature() {
+    return state.detailedAgriculture + "|" + state.detailedHydro + "|" + state.agricultureMetric + "|" + state.hydroMetric + "|" + state.agricultureAggregation + "|" + state.includeLsmsEstimates;
+  }
+
+  function seriesResult(series, iso, from, to) {
+    return series.crop ? agricultureModel.cropValue(iso, series.crop, state.agricultureMetric, from, to)
+      : series.hydro ? agricultureModel.hydroValue(iso, series.hydro, state.hydroMetric, from, to)
+      : agricultureModel.seriesValue(series.keys.filter(function (key) { return state.selected[key]; }),
+        iso, from, to, state.agricultureAggregation);
+  }
+  function seriesMetric(series) {
+    if (series.hydro || (series.keys && series.keys.length === 1 && series.keys[0] === 'hydro_maps')) return 'dispersion';
+    if (series.crop) return state.agricultureMetric;
+    if (series.keys && series.keys.length === 1 && series.keys[0] === 'agriculture_maps') return state.agricultureAggregation;
+    return 'coverage';
+  }
   // Bounding-box centres are unsuitable for antimeridian-spanning countries.
   // Keep their donut over the inhabited/mainland landmass instead.
   var MARKER_POSITIONS = {
@@ -23,23 +48,30 @@
 
   var yearCount = META.yearMax - META.yearMin + 1;
   var recordPrefixes = {};
-  datasetOrder.forEach(function (key) {
-    recordPrefixes[key] = {};
-    Object.keys(DATASETS[key].records).forEach(function (iso) {
-      var prefix = new Array(yearCount + 1).fill(0);
-      var yearly = DATASETS[key].records[iso];
-      for (var index = 0; index < yearCount; index++) {
-        prefix[index + 1] = prefix[index] + (yearly[String(META.yearMin + index)] || 0);
-      }
-      recordPrefixes[key][iso] = prefix;
+  function rebuildRecordPrefixes() {
+    recordPrefixes = {};
+    datasetOrder.forEach(function (key) {
+      recordPrefixes[key] = {};
+      Object.keys(DATASETS[key].records).forEach(function (iso) {
+        var prefix = new Array(yearCount + 1).fill(0);
+        var yearly = DATASETS[key].records[iso];
+        for (var index = 0; index < yearCount; index++) {
+          prefix[index + 1] = prefix[index] + (yearly[String(META.yearMin + index)] || 0);
+        }
+        recordPrefixes[key][iso] = prefix;
+      });
     });
-  });
+  }
+  rebuildRecordPrefixes();
   var datasetCountCache = new Map();
   var countryCountCache = new Map();
   var scaleCache = new Map();
 
   function selectedKeys() {
     return datasetOrder.filter(function (key) { return state.selected[key]; });
+  }
+  function groupedDisplay() {
+    return state.groupedDonuts && !state.selected.agriculture_maps && !state.selected.hydro_maps;
   }
 
   function countUnit(keys) {
@@ -53,11 +85,19 @@
   }
 
   function displaySeries() {
-    if (!state.groupedDonuts) {
+    if (state.detailedAgriculture) return agricultureModel.agriculture.cropOrder.map(function (crop) {
+      var item = agricultureModel.agriculture.crops[crop];
+      return { id: "crop:" + crop, crop: crop, label: item.name, color: item.color, keys: [], selected: true };
+    });
+    if (state.detailedHydro) return [{ id: "hydro:overall", hydro: "overall", label: agricultureModel.hydro.aggregate.name, color: "#d6ac54", keys: [], selected: true }].concat(agricultureModel.hydro.variableOrder.map(function (variable) {
+      var item = agricultureModel.hydro.variables[variable];
+      return { id: "hydro:" + variable, hydro: variable, label: item.name, color: ["#4ca6d9", "#69b578", "#c99a43"][agricultureModel.hydro.variableOrder.indexOf(variable) % 3], keys: [], selected: true };
+    }));
+    if (!groupedDisplay()) {
       return datasetOrder.map(function (key) {
         return {
           id: key, label: DATASETS[key].name, color: DATASETS[key].color,
-          keys: [key], selected: state.selected[key]
+          keys: [key], selected: state.selected[key], metric: seriesMetric({ keys: [key] })
         };
       });
     }
@@ -186,6 +226,7 @@
   }
 
   function identityColors(series) {
+    if (series.crop || series.hydro) return [series.color];
     return series.keys.map(function (key) { return DATASETS[key].color; });
   }
 
@@ -202,9 +243,14 @@
 
   function sectorAngles(series, index) {
     var size = 360 / series.length;
-    var currentDomain = DATASETS[series[index].keys[0]].domain;
-    var previousDomain = DATASETS[series[(index + series.length - 1) % series.length].keys[0]].domain;
-    var nextDomain = DATASETS[series[(index + 1) % series.length].keys[0]].domain;
+    function domain(item) {
+      if (item.crop) return "Agriculture";
+      if (item.hydro) return "Hydrology";
+      return DATASETS[item.keys[0]].domain;
+    }
+    var currentDomain = domain(series[index]);
+    var previousDomain = domain(series[(index + series.length - 1) % series.length]);
+    var nextDomain = domain(series[(index + 1) % series.length]);
     var showCategoryGaps = series.length > categoryOrder().length;
     return {
       start: index * size + (showCategoryGaps && currentDomain !== previousDomain ? 8 : 1),
@@ -337,9 +383,23 @@
     if (!countryInScope(feature.id)) {
       return "<b>" + escapeHTML(feature.properties.name) + "</b><br>Outside DHS survey-coverage scope";
     }
-    var rows = selectedKeys().map(function (key) {
+    if (state.detailedAgriculture || state.detailedHydro) return '<b>' + escapeHTML(feature.properties.name) + '</b><br>' +
+      displaySeries().map(function (item) { return escapeHTML(item.label) + ': ' +
+        agricultureModel.format(seriesResult(item, feature.id, state.yearFrom, state.yearTo), item.hydro ? state.hydroMetric : state.agricultureMetric);
+      }).join('<br>');
+    var rows = groupedDisplay() ? displaySeries().filter(function (series) { return series.selected; }).map(function (series) {
+      var keys = series.keys.filter(function (key) { return state.selected[key]; });
+      return escapeHTML(series.label) + ": " + formatNumber(seriesCount(series, feature.id)) +
+        " " + escapeHTML(countUnit(keys)) + " &rarr; " + agricultureModel.formatCoverageScore(
+          seriesResult(series, feature.id, state.yearFrom, state.yearTo));
+    }) : selectedKeys().map(function (key) {
+      if (key === 'agriculture_maps') return 'Agricultural map support: ' + agricultureModel.format(
+        agricultureModel.aggregateValue(feature.id, state.agricultureAggregation, state.yearFrom, state.yearTo), state.agricultureAggregation);
+      if (key === 'hydro_maps') return 'Hydrology map support: ' + agricultureModel.format(
+        agricultureModel.hydroValue(feature.id, 'overall', 'dispersion', state.yearFrom, state.yearTo), 'dispersion');
       return escapeHTML(DATASETS[key].name) + ": " + formatNumber(datasetCount(key, feature.id)) +
-        " " + escapeHTML(DATASETS[key].unit);
+        " " + escapeHTML(DATASETS[key].unit) + " &rarr; " + agricultureModel.formatCoverageScore(
+          agricultureModel.datasetValue(key, feature.id, state.yearFrom, state.yearTo, state.agricultureAggregation));
     });
     return "<b>" + escapeHTML(feature.properties.name) + "</b><br>" +
       "Total: " + formatNumber(countryCount(feature.id)) + " " + escapeHTML(countUnit(selectedKeys())) +
@@ -348,7 +408,7 @@
 
   function recomputeScale() {
     var cacheKey = state.yearFrom + "|" + state.yearTo + "|" +
-      selectedKeys().join(",") + "|" + (state.groupedDonuts ? "grouped" : "datasets");
+      selectedKeys().join(",") + "|" + agricultureSignature() + "|" + (state.groupedDonuts ? "grouped" : "datasets");
     if (scaleCache.has(cacheKey)) {
       var cached = scaleCache.get(cacheKey);
       seriesMaxima = cached.seriesMaxima;
@@ -409,9 +469,9 @@
   function seriesAcronym(series) {
     var acronyms = {
       biotime: "BIO", living_planet: "LPI", predicts: "PRE", gbif: "GBIF",
-      lsms_isa: "ISA", dhs: "DHS", mics: "MICS", lsms: "LSMS",
+      lsms_isa: "ISA", grdc: "GRDC", dhs: "DHS", mics: "MICS", lsms: "LSMS",
       "domain:Ecology": "ECO", "domain:Agriculture": "AGR",
-      "domain:Public Health": "PH"
+      "domain:Hydrology": "HYD", "domain:Public Health": "PH"
     };
     return acronyms[series.id] || series.label.slice(0, 4).toUpperCase();
   }
@@ -435,36 +495,29 @@
         return;
       }
       if (!state.yearlyHistograms) {
-        var value = seriesCount(item, feature.id);
+        var value = seriesResult(item, feature.id, state.yearFrom, state.yearTo);
+        var metric = item.crop ? state.agricultureMetric : item.hydro ? state.hydroMetric : (item.metric || "coverage");
         paths.push('<path d="' + ringPath(sectorStart, sectorEnd) + '" fill="' +
-          assessmentColor(perMillionKm2(value, feature.id), seriesMaxima[item.id]) + '" class="sector' +
-          (value ? "" : " empty-sector") + '"></path>');
+          agricultureModel.color(value.value, metric) + '" class="sector' +
+          (value.value !== null ? "" : " empty-sector") + '"><title>' + escapeHTML(item.label) + ': ' +
+          agricultureModel.format(value, metric) + '</title></path>');
         return;
       }
       paths.push('<path d="' + ringPath(sectorStart, sectorEnd) + '" class="sector-outline"></path>');
       var yearCount = state.yearTo - state.yearFrom + 1;
-      var arcPixels = (sectorEnd - sectorStart) * Math.PI / 180 * 27 * size / 60;
-      var visibleBuckets = Math.min(yearCount, Math.max(4, Math.floor(arcPixels / 3)));
-      var yearsPerBucket = Math.ceil(yearCount / visibleBuckets);
+      var yearsPerBucket = 1;
       var bucketWidth = (sectorEnd - sectorStart) / yearCount;
       for (var firstYear = state.yearFrom; firstYear <= state.yearTo; firstYear += yearsPerBucket) {
         var lastYear = Math.min(state.yearTo, firstYear + yearsPerBucket - 1);
-        var count = 0;
-        for (var year = firstYear; year <= lastYear; year++) {
-          count += seriesYearCount(item, feature.id, year);
-        }
+        var count = seriesResult(item, feature.id, firstYear, lastYear);
         var start = sectorStart + (firstYear - state.yearFrom) * bucketWidth;
         var end = sectorStart + (lastYear - state.yearFrom + 1) * bucketWidth;
-        var annualAverage = count / (lastYear - firstYear + 1);
-        var fill = count
-          ? scoreColor(minMaxScore(perMillionKm2(annualAverage, feature.id), seriesYearRanges[item.id]))
-          : "#283644";
+        var bucketMetric = item.crop ? state.agricultureMetric : item.hydro ? state.hydroMetric : (item.metric || "coverage");
+        var fill = agricultureModel.color(count.value, bucketMetric);
         var label = firstYear === lastYear ? String(firstYear) : firstYear + "–" + lastYear;
         paths.push('<path d="' + ringPath(start, end) + '" fill="' + fill +
-          '" class="bucket' + (count ? '' : ' empty-bucket') + '"><title>' + label + ': ' +
-          formatNumber(count) + ' ' + escapeHTML(countUnit(item.keys.filter(function (key) {
-            return state.selected[key];
-          }))) + '</title></path>');
+          '" class="bucket' + (count.value !== null ? '' : ' empty-bucket') + '"><title>' + label + ': ' +
+          agricultureModel.format(count, bucketMetric) + '</title></path>');
       }
     });
     var fontSize = Math.max(4, Math.min(9, Math.round(size * 0.105)));
@@ -499,7 +552,7 @@
       var marker = recordMarkers[markerIndex];
       var iconSignature = size + "|" + state.yearFrom + "|" + state.yearTo + "|" +
         selectedKeys().join(",") + "|" + state.groupedDonuts + "|" + state.yearlyHistograms +
-        "|" + focused;
+        "|" + focused + "|" + agricultureSignature();
       if (!marker) {
         var icon = L.divIcon({
           className: "record-div-icon" + (enlarged ? " selected-record-icon" : ""),
@@ -553,28 +606,18 @@
     var keys = selectedKeys();
     var scores = keys.map(function (key) {
       var density = perMillionKm2(datasetCount(key, feature.id), feature.id);
-      var maximum = datasetMaxima[key] || 0;
-      var annualMaximum = (datasetYearRanges[key] || {}).max || 0;
-      var yearsWithRecords = 0, temporalScore = 0;
+      var yearsWithRecords = 0;
       for (var year = state.yearFrom; year <= state.yearTo; year++) {
         var count = ((DATASETS[key].records[feature.id] || {})[String(year)] || 0);
         if (count) yearsWithRecords++;
-        if (count && annualMaximum) {
-          temporalScore += Math.log1p(perMillionKm2(count, feature.id)) / Math.log1p(annualMaximum);
-        }
       }
-      var yearCount = state.yearTo - state.yearFrom + 1;
-      temporalScore = yearCount ? temporalScore / yearCount : 0;
-      var totalScore = density && maximum ? Math.log1p(density) / Math.log1p(maximum) : 0;
       return {
         key: key,
-        // Reward both total volume and sustained annual volume. This prevents a single
-        // unusually large year from dominating the "good coverage" examples.
-        score: totalScore * 0.6 + temporalScore * 0.4,
+        score: agricultureModel.datasetValue(key, feature.id, state.yearFrom, state.yearTo, state.agricultureAggregation).value,
         present: density > 0,
         yearsWithRecords: yearsWithRecords
       };
-    });
+    }).filter(function (item) { return item.score !== null; });
     var activeDatasetYears = scores.reduce(function (total, item) {
       return total + item.yearsWithRecords;
     }, 0);
@@ -615,12 +658,34 @@
           '"><b>' + escapeHTML(item.feature.properties.name) + '</b><small>' + escapeHTML(note) + '</small></button>';
       }).join('') + '</section>';
     }
-    container.innerHTML = '<p class="examples-method">Examples update with the selected sources and time window. “Good” combines total records per million km² with sustained annual record volume, so broad coverage over time ranks above a single-year spike. It does not mean good data quality overall.</p>' +
+    container.innerHTML = '<p class="examples-method">Each dataset is scored separately against the displayed DHS countries, then selected dataset scores are averaged. A score of 1 means the highest relative coverage in that dataset; it does not mean the datasets have the same type of record.</p>' +
       '<div class="example-columns">' + group('Relatively good coverage', strongest, false) +
       group('Very low coverage', weakest, true) + '</div>';
   }
 
   function renderHistogram() {
+    if (state.detailedAgriculture || state.detailedHydro) {
+      var isHydro = state.detailedHydro;
+      var metric = isHydro ? state.hydroMetric : state.agricultureMetric, values = {};
+      for (var y = META.yearMin; y <= META.yearMax; y++) {
+        var available = [];
+        Object.keys(scopeRecords).forEach(function (iso) {
+          (isHydro ? agricultureModel.hydro.variableOrder : agricultureModel.agriculture.cropOrder).forEach(function (item) {
+            var value = isHydro ? agricultureModel.hydroValue(iso, item, metric, y, y).value : agricultureModel.cropValue(iso, item, metric, y, y).value;
+            if (value !== null) available.push(value);
+          });
+        });
+        values[y] = available.length ? available.reduce(function (a, b) { return a + b; }, 0) / available.length : null;
+      }
+      var maximum = Math.max.apply(null, Object.values(values).filter(Number.isFinite).concat([1]));
+      document.getElementById('yearHist').innerHTML = Object.keys(values).map(function (year) {
+        var value = values[year], active = Number(year) >= state.yearFrom && Number(year) <= state.yearTo;
+        return '<i class="' + (active ? 'active' : '') + '" style="height:' +
+          (value === null ? 2 : Math.max(2, 100 * value / maximum)) + '%" title="' + year + ': ' +
+          (value === null ? 'Unavailable' : 'Mean across available country/' + (isHydro ? 'comparison' : 'crop') + ' results: ' + value.toFixed(3) + ' ' + agricultureModel.metrics[metric].unit) + '"></i>';
+      }).join('');
+      return;
+    }
     var totals = yearlyTotals();
     var range = positiveRange(Object.keys(totals).map(function (year) { return totals[year]; }));
     var html = "";
@@ -634,14 +699,37 @@
   }
 
   function renderSummary() {
+    if (state.detailedAgriculture || state.detailedHydro) {
+      var selectedMetric = state.detailedHydro ? state.hydroMetric : state.agricultureMetric;
+      var metric = agricultureModel.metrics[selectedMetric];
+      var cropSeries = displaySeries();
+      var maximum = agricultureModel.maxima[selectedMetric];
+      var modeTitle = state.detailedHydro ? 'Hydrology comparisons' : 'Agriculture crops';
+      document.getElementById("datasetLegend").innerHTML = '<div class="legend-group-title">' + modeTitle + ' · ' +
+        escapeHTML(metric.label) + '</div>' + donutLegendHTML(cropSeries) +
+        '<div class="assessment-gradient" style="background:linear-gradient(90deg,' + agricultureModel.color(0, selectedMetric) +
+        ',' + agricultureModel.color(maximum || 1, selectedMetric) + ')"></div>' +
+        '<div class="assessment-gradient-labels"><span>0 ' + metric.unit + '</span><span>' +
+        (maximum ? maximum.toFixed(2) + ' ' + metric.unit : 'No available values') + '</span></div>' +
+        '<p class="timeline-note">Each available map is transferred to the same country grid and converted to country-normalised shares before the metric is calculated. ' +
+        escapeHTML(metric.note) + ' Grey = unavailable.</p>';
+      document.getElementById("recordTotal").textContent = metric.label;
+      document.getElementById("legendMax").textContent = "Grey = unavailable";
+      document.getElementById("mapCaption").textContent = modeTitle + ' · ' + metric.label + ' · ' +
+        state.yearFrom + '–' + state.yearTo + (state.yearlyHistograms ? ' · annual bins' : ' · selected window');
+      document.getElementById("coverageExamples").innerHTML = '';
+      return;
+    }
     var keys = selectedKeys();
     var legendSeries = displaySeries();
     document.getElementById("datasetLegend").innerHTML =
       (state.groupedDonuts ? '<div class="legend-group-title">Grouped by category</div>' :
         '<div class="legend-group-title">Individual datasets</div>') + donutLegendHTML(legendSeries) +
-      '<div class="legend-group-title count-scale-title">Relative coverage within each source</div>' +
+      '<div class="legend-group-title count-scale-title">Relative coverage within each dataset</div>' +
       '<div class="assessment-gradient"></div><div class="assessment-gradient-labels">' +
-      '<span>Lower</span><span>Mid-range</span><span>Higher</span></div>' + legendSeries.map(function (series) {
+      '<span>Lower</span><span>Mid-range</span><span>Higher</span></div>' +
+      '<p class="timeline-note">Coverage combines a dataset\'s counted units per million km² (60%) and years with records (40%). Each dataset is scored separately, because its counted unit may be records, surveys, or station-years. <button type="button" class="coverage-info-button" id="coverageInfoButton" aria-label="Learn how coverage scores are calculated" title="How coverage scores are calculated">i</button></p>' +
+      '<div class="dataset-legend-grid">' + legendSeries.map(function (series) {
       var identity = state.groupedDonuts
         ? '<span class="legend-category-swatches">' + series.keys.map(function (key) {
           return '<i style="background:' + DATASETS[key].color + ';opacity:' + (state.selected[key] ? 1 : 0.25) + '"></i>';
@@ -650,10 +738,9 @@
       return '<div class="dataset-legend-row" style="opacity:' + (series.selected ? 1 : 0.4) +
         '">' + identity + '<span class="legend-series-name' + (state.groupedDonuts ? ' category-name' : '') + '">' +
         escapeHTML(series.label) +
-        '</span><small class="legend-maximum">' +
-        (series.selected ? formatNumber(Math.round(seriesMaxima[series.id])) + " / million km² max" : "off") + '</small></div>';
-    }).join("") + (state.yearlyHistograms
-      ? '<p class="timeline-note">Each sector runs from the first selected year to the last. Individual years are shown when space allows; on smaller donuts adjacent years are combined into wider, readable marks.</p>'
+        '</span></div>';
+    }).join("") + '</div>' + (state.yearlyHistograms
+      ? '<p class="timeline-note">Each sector runs from the first selected year to the last, with one mark per year. Zoom in or select a country to enlarge its donut.</p>'
       : '') + '<details class="count-unit-guide"><summary>What does each count mean?</summary>' +
       datasetOrder.map(function (key) {
         var dataset = DATASETS[key];
@@ -662,23 +749,51 @@
           escapeHTML(dataset.description) + '.</span></div>';
       }).join("") + '</details>';
     document.getElementById("recordTotal").textContent = formatNumber(selectedTotal()) + " " + countUnit(keys);
-    document.getElementById("legendMax").textContent = "Grey = no records";
+    document.getElementById("legendMax").textContent = "Grey = unavailable or off";
     document.getElementById("mapCaption").textContent =
       (keys.length ? keys.length + " selected dataset" + (keys.length === 1 ? "" : "s") : "No datasets") +
       " · " + state.yearFrom + "–" + state.yearTo + " · " +
       (state.yearlyHistograms ? "yearly " : "") +
       (state.groupedDonuts ? "category radial sectors" : "dataset radial sectors");
     renderCoverageExamples();
+    renderCoverageMethod();
+  }
+
+  function renderCoverageMethod() {
+    var list = document.getElementById('coverageMethodList');
+    if (!list) return;
+    function formula(unit) {
+      var label = escapeHTML(unit);
+      return '<div class="coverage-formula"><b>Formula</b><span>α × log(1 + ' + label +
+        ' per 1 million km²) ÷ log(1 + highest density in the DHS-country pool) + β × years with ' +
+        label + ' ÷ selected years</span></div>';
+    }
+    list.innerHTML = datasetOrder.map(function (key) {
+      var dataset = DATASETS[key];
+      var content = key === 'agriculture_maps'
+        ? (state.agricultureAggregation === 'coverage'
+          ? '<p><strong>Counted unit:</strong> distinct reporting administrative units: the reconciled census evidence behind the crop maps. A unit is counted once per country-year, even when it supports more than one crop or product.</p>' + formula('reporting administrative units')
+          : '<p>The selected map metric is precomputed for every country and year by combining the available crop comparisons. Dispersion, similarity and source availability are equal-weight means across crops; effective resolution is the largest crop result.</p>' +
+            '<p>Dispersion is the default. It is the average native-cell CV after each product map is converted to a share of that country’s mapped total. Zero means the products place crop area in the same pattern; larger values mean their placement differs.</p>')
+        : '<p><strong>Counted unit:</strong> ' + escapeHTML(dataset.unit) + '. ' + escapeHTML(dataset.description) + '.</p>' + formula(dataset.unit);
+      return '<section><h3><i style="background:' + dataset.color + '"></i>' + escapeHTML(dataset.name) + '</h3>' + content + '</section>';
+    }).join('');
   }
 
   function syncHash() {
     var params = new URLSearchParams();
-    params.set("v", "4");
+    params.set("v", "8");
     params.set("datasets", selectedKeys().join(","));
     params.set("from", state.yearFrom);
     params.set("to", state.yearTo);
     params.set("hist", state.yearlyHistograms ? "1" : "0");
     params.set("group", state.groupedDonuts ? "categories" : "datasets");
+    params.set("agriculture", state.detailedAgriculture ? "1" : "0");
+    params.set("hydro", state.detailedHydro ? "1" : "0");
+    params.set("metric", state.agricultureMetric);
+    params.set("hydroMetric", state.hydroMetric);
+    params.set("lsmsEstimates", state.includeLsmsEstimates ? "1" : "0");
+    params.set("aggr", state.agricultureAggregation);
     try { history.replaceState(null, "", "#" + params.toString()); } catch (error) { /* file:// */ }
   }
 
@@ -687,15 +802,17 @@
     var params = new URLSearchParams(location.hash.slice(1));
     if (params.has("datasets")) {
       var requested = params.get("datasets").split(",");
-      // Older links predate one or more survey datasets. Preserve their explicit
+      // Older links predate one or more datasets. Preserve their explicit
       // selections while leaving newly introduced datasets selected by default.
       var linkVersion = params.get("v");
       datasetOrder.forEach(function (key) {
-        var existedWhenShared = linkVersion === "4" ||
+        var isCropSource = ["mapspam", "gaez", "mirca2000", "mirca_os"].indexOf(key) !== -1;
+        var isMapAggregate = key === 'agriculture_maps' || key === 'hydro_maps';
+        var existedWhenShared = linkVersion === "8" || (!isMapAggregate && (linkVersion === "7" || (linkVersion === "6" || (!isCropSource && (linkVersion === "5" || (key !== "grdc" && (linkVersion === "4" ||
           ((linkVersion === "2" || linkVersion === "3") && key !== "mics") ||
-          (!linkVersion && key !== "dhs" && key !== "mics");
+          (!linkVersion && key !== "dhs" && key !== "mics"))))))));
         if (existedWhenShared)
-          state.selected[key] = requested.indexOf(key) !== -1;
+          state.selected[key] = requested.indexOf(key) !== -1 || (key === 'agriculture_maps' && requested.indexOf('crop_agriculture') !== -1);
       });
     }
     var from = Number(params.get("from")), to = Number(params.get("to"));
@@ -706,17 +823,34 @@
     if (state.yearFrom > state.yearTo) state.yearFrom = state.yearTo;
     if (params.has("hist")) state.yearlyHistograms = params.get("hist") === "1";
     if (params.has("group")) state.groupedDonuts = params.get("group") === "categories";
+    state.detailedAgriculture = params.get('agriculture') === '1';
+    state.detailedHydro = params.get('hydro') === '1' && !state.detailedAgriculture;
+    if (params.has('lsmsEstimates')) state.includeLsmsEstimates = params.get('lsmsEstimates') !== '0';
+    if (['dispersion', 'resolution', 'similarity', 'availability', 'coverage'].indexOf(params.get('metric')) !== -1) state.agricultureMetric = params.get('metric');
+    if (['dispersion', 'resolution', 'similarity', 'availability'].indexOf(params.get('hydroMetric')) !== -1) state.hydroMetric = params.get('hydroMetric');
+    if (['dispersion', 'resolution', 'similarity', 'availability', 'coverage'].indexOf(params.get('aggr')) !== -1) state.agricultureAggregation = params.get('aggr');
   }
 
   var renderSignatures = {};
   var redrawFrame = null;
   function redraw() {
+    if (appliedEstimateMode !== state.includeLsmsEstimates) {
+      appliedEstimateMode = state.includeLsmsEstimates;
+      DATASETS = appliedEstimateMode ? estimatedDatasets : observedDatasets;
+      rebuildRecordPrefixes();
+      datasetCountCache.clear(); countryCountCache.clear(); scaleCache.clear();
+      agricultureModel = DataDesertsScores.create(DATASETS,
+        typeof AGRICULTURE === 'undefined' ? undefined : AGRICULTURE,
+        WORLD_GEOJSON.features, Object.keys(scopeRecords),
+        typeof HYDRO === 'undefined' ? undefined : HYDRO);
+      renderFilters();
+    }
     var selected = selectedKeys().join(",");
-    var dataSignature = state.yearFrom + "|" + state.yearTo + "|" + selected;
+    var dataSignature = state.yearFrom + "|" + state.yearTo + "|" + selected + "|" + agricultureSignature();
     var seriesSignature = dataSignature + "|" + state.groupedDonuts;
     var donutSignature = seriesSignature + "|" + state.yearlyHistograms + "|" + focusedCountry;
     var controlsSignature = state.yearFrom + "|" + state.yearTo + "|" +
-      state.groupedDonuts + "|" + state.yearlyHistograms;
+      state.groupedDonuts + "|" + state.yearlyHistograms + "|" + agricultureSignature();
 
     if (renderSignatures.scale !== seriesSignature) {
       recomputeScale();
@@ -847,6 +981,25 @@
     groupingToggle.title = state.groupedDonuts
       ? "Currently grouped by category — switch to individual dataset sectors"
       : "Currently showing individual datasets — group radial sectors by category";
+    var detailMode = state.detailedAgriculture || state.detailedHydro;
+    var mapAggregateSelected = state.selected.agriculture_maps || state.selected.hydro_maps;
+    groupingToggle.disabled = detailMode || mapAggregateSelected;
+    groupingToggle.classList.toggle('active', groupedDisplay());
+    groupingToggle.setAttribute('aria-pressed', groupedDisplay());
+    if (detailMode || mapAggregateSelected) groupingToggle.title = 'Category grouping is unavailable while map-comparison aggregates are shown';
+    document.getElementById('lsmsEstimatesToggle').checked = state.includeLsmsEstimates;
+    document.getElementById('lsmsEstimatesToggle').disabled = detailMode;
+    document.getElementById('agricultureToggle').setAttribute('aria-pressed', state.detailedAgriculture);
+    document.getElementById('agricultureToggle').classList.toggle('active', state.detailedAgriculture);
+    document.getElementById('agricultureMetricControl').hidden = !state.detailedAgriculture;
+    document.getElementById('hydroToggle').setAttribute('aria-pressed', state.detailedHydro);
+    document.getElementById('hydroToggle').classList.toggle('active', state.detailedHydro);
+    document.getElementById('hydroMetricControl').hidden = !state.detailedHydro;
+    document.getElementById('agricultureAggregationControl').hidden = detailMode;
+    document.getElementById('agricultureMetric').value = state.agricultureMetric;
+    document.getElementById('hydroMetric').value = state.hydroMetric;
+    document.getElementById('agricultureAggregation').value = state.agricultureAggregation;
+    document.querySelectorAll('#datasetFilters input, #selectAll, #selectNone').forEach(function (input) { input.disabled = detailMode; });
     document.getElementById("yearRangeVal").textContent = state.yearFrom + "–" + state.yearTo;
   }
 
@@ -907,9 +1060,26 @@
     redraw();
   };
   groupingToggle.onclick = function () {
+    if (state.detailedAgriculture || state.detailedHydro) return;
     state.groupedDonuts = !state.groupedDonuts;
     redraw();
   };
+  document.getElementById('lsmsEstimatesToggle').onchange = function (event) {
+    state.includeLsmsEstimates = event.target.checked; redraw();
+  };
+  document.getElementById('agricultureToggle').onclick = function () {
+    state.detailedAgriculture = !state.detailedAgriculture;
+    if (state.detailedAgriculture) state.detailedHydro = false;
+    redraw();
+  };
+  document.getElementById('hydroToggle').onclick = function () {
+    state.detailedHydro = !state.detailedHydro;
+    if (state.detailedHydro) state.detailedAgriculture = false;
+    redraw();
+  };
+  document.getElementById('agricultureMetric').onchange = function (event) { state.agricultureMetric = event.target.value; redraw(); };
+  document.getElementById('hydroMetric').onchange = function (event) { state.hydroMetric = event.target.value; redraw(); };
+  document.getElementById('agricultureAggregation').onchange = function (event) { state.agricultureAggregation = event.target.value; redraw(); };
   document.getElementById("selectAll").onclick = function () {
     datasetOrder.forEach(function (key) { state.selected[key] = true; }); renderFilters(); redraw();
   };
@@ -918,46 +1088,89 @@
   };
 
   function yearStrip(key, iso) {
-    var dataset = DATASETS[key];
-    var yearly = dataset.records[iso] || {};
     var years = [];
-    for (var year = state.yearFrom; year <= state.yearTo; year++) {
-      var count = yearly[String(year)] || 0;
-      years.push(count);
-    }
+    for (var year = state.yearFrom; year <= state.yearTo; year++) years.push(year);
     return '<div class="year-strip" style="grid-template-columns:repeat(' + years.length + ',1fr)">' +
-      years.map(function (count, index) {
-      var opacity = count ? 0.25 + 0.75 * minMaxScore(
-        perMillionKm2(count, iso), datasetYearRanges[key]) : 0;
-        return '<i title="' + (state.yearFrom + index) + ': ' + formatNumber(count) + '" style="background:' +
-      dataset.color + ';opacity:' + opacity + '"></i>';
+      years.map(function (year) {
+        var count = (DATASETS[key].records[iso] || {})[String(year)] || 0;
+        var value = agricultureModel.datasetValue(key, iso, year, year, state.agricultureAggregation);
+        return '<i title="' + year + ': ' + formatNumber(count) + ' ' + escapeHTML(DATASETS[key].unit) +
+          ' &rarr; ' + agricultureModel.formatCoverageScore(value) + '" style="background:' +
+          agricultureModel.color(value.value, 'coverage') + '"></i>';
       }).join("") + '</div><div class="year-axis"><span>' + state.yearFrom + '</span><span>' + state.yearTo + '</span></div>';
   }
 
   function seriesYearStrip(series, iso) {
     var years = [];
-    for (var year = state.yearFrom; year <= state.yearTo; year++) {
-      var count = seriesYearCount(series, iso, year);
-      years.push(count);
-    }
+    for (var year = state.yearFrom; year <= state.yearTo; year++) years.push(year);
     return '<div class="year-strip" style="grid-template-columns:repeat(' + years.length + ',1fr)">' +
-      years.map(function (count, index) {
-      var opacity = count ? 0.25 + 0.75 * minMaxScore(
-        perMillionKm2(count, iso), seriesYearRanges[series.id]) : 0;
-        return '<i title="' + (state.yearFrom + index) + ': ' + formatNumber(count) + '" style="background:' +
-          series.color + ';opacity:' + opacity + '"></i>';
+      years.map(function (year) {
+        var count = seriesYearCount(series, iso, year);
+        var value = seriesResult(series, iso, year, year);
+        return '<i title="' + year + ': ' + formatNumber(count) + ' ' + escapeHTML(countUnit(series.keys)) +
+          ' &rarr; ' + agricultureModel.formatCoverageScore(value) + '" style="background:' +
+          agricultureModel.color(value.value, 'coverage') + '"></i>';
       }).join("") + '</div><div class="year-axis"><span>' + state.yearFrom + '</span><span>' + state.yearTo + '</span></div>';
+  }
+
+  function cropResolution(dataset, iso) {
+    if (!dataset.spatialSupport) return "";
+    var years = (dataset.effective_resolution_km || {})[iso] || {};
+    var values = [];
+    var missing = false;
+    Object.keys(dataset.records[iso] || {}).forEach(function (year) {
+      if (+year < state.yearFrom || +year > state.yearTo) return;
+      var crops = Object.values(years[year] || {});
+      if (!crops.length) missing = true;
+      crops.forEach(function (value) {
+        if (!Number.isFinite(value) || value <= 0) missing = true;
+        else values.push(value);
+      });
+    });
+    return missing || !values.length
+      ? "Effective resolution unavailable for this selection; raster detail is withheld."
+      : "Minimum raster cell width for this selection: " + Math.max.apply(null, values).toFixed(1) +
+        " km (map country curves). Country summaries do not show within-country allocation.";
+  }
+
+  function lsmsEstimationNote(iso) {
+    function sum(records) { return Object.keys(records[iso] || {}).reduce(function (total, year) {
+      return total + (+year >= state.yearFrom && +year <= state.yearTo ? records[iso][year] : 0);
+    }, 0); }
+    var observed = sum(observedDatasets.lsms.records), estimated = sum(observedDatasets.lsms.estimatedRecords || {});
+    return '<p class="unit-explanation">' + formatNumber(observed) + ' observed roster records; ' +
+      formatNumber(estimated) + ' estimated household members ' + (state.includeLsmsEstimates ? 'included' : 'available but excluded') +
+      '. Estimates multiply reviewed household counts by a cited household-size mean; they are not interview counts.</p>';
   }
 
   function datasetDetailHTML(key, iso, nested) {
     var dataset = DATASETS[key], count = datasetCount(key, iso);
+    var score = agricultureModel.datasetValue(key, iso, state.yearFrom, state.yearTo, state.agricultureAggregation);
+    if (key === 'agriculture_maps') {
+      var result = agricultureModel.aggregateValue(iso, state.agricultureAggregation, state.yearFrom, state.yearTo);
+      var method = agricultureModel.metrics[state.agricultureAggregation].label;
+      return '<div class="dataset-detail"><h3>Agricultural map support</h3><p>' + method + ': ' +
+        agricultureModel.format(result, state.agricultureAggregation) + '</p><p class="unit-explanation">' +
+        result.available + ' of ' + result.expected + (state.agricultureAggregation === 'coverage' ? ' years have reporting-unit evidence.' : ' years have precomputed crop aggregates.') + '</p>' +
+        (state.agricultureAggregation === 'dispersion' ? '<p class="unit-explanation">A coefficient of variation is the standard deviation divided by the mean difference between map products. Zero means the products place crop area in the same pattern; larger values mean their placement differs.</p>' : '') +
+        agricultureYearStrip(iso, null) + '</div>';
+    }
+    if (key === 'hydro_maps') {
+      var hydroResult = agricultureModel.hydroValue(iso, 'overall', 'dispersion', state.yearFrom, state.yearTo);
+      return '<div class="dataset-detail"><h3>Hydrology map support</h3><p>Overall allocation dispersion (coefficient of variation): ' +
+        agricultureModel.format(hydroResult, 'dispersion') + '</p><p class="unit-explanation">' +
+        hydroResult.available + ' of ' + hydroResult.expected + ' selected years have precomputed map comparisons.</p>' +
+        '<p class="unit-explanation">A coefficient of variation is the standard deviation divided by the mean difference between the map products. Zero means the products place the mapped quantity in the same pattern; larger values mean their placement differs.</p>' +
+        hydroYearStrip(iso, 'overall') + '</div>';
+    }
     if (key === "dhs") {
       var years = (dataset.surveyYears[iso] || []).filter(function (entry) {
         return entry.year >= state.yearFrom && entry.year <= state.yearTo;
       });
       return '<div class="dataset-detail' + (nested ? ' nested' : '') + '"><h3><i style="background:' +
         dataset.color + '"></i><a href="' + dataset.url + '" target="_blank" rel="noopener" style="color:inherit">DHS</a></h3>' +
-        '<p>Survey years in this window</p>' + (years.length
+        '<p>' + formatNumber(count) + ' survey' + (count === 1 ? '' : 's') + ' in this window &rarr; ' +
+        agricultureModel.formatCoverageScore(score) + '</p><p>Survey years in this window</p>' + (years.length
           ? '<ul class="survey-years" aria-label="DHS survey years">' + years.map(function (entry) {
             var nutrition = entry.nutrition === true;
             var title = entry.surveyCount + ' survey' + (entry.surveyCount === 1 ? '' : 's') +
@@ -975,23 +1188,37 @@
     return '<div class="dataset-detail' + (nested ? ' nested' : '') + '"><h3><i style="background:' +
       dataset.color + '"></i><a href="' + dataset.url + '" target="_blank" rel="noopener" style="color:inherit">' +
       escapeHTML(dataset.name) + '</a></h3><p>' + formatNumber(count) + ' ' + escapeHTML(dataset.unit) +
-      ' in this window</p><p class="unit-explanation">' + escapeHTML(dataset.description) +
-      '.</p>' + yearStrip(key, iso) + '</div>';
+      ' in this window &rarr; ' + agricultureModel.formatCoverageScore(score) + '</p><p class="unit-explanation">' + escapeHTML(dataset.description) +
+      '.</p>' + (key === 'lsms' ? lsmsEstimationNote(iso) : '') + (dataset.spatialSupport ? '<p class="unit-explanation">' + escapeHTML(cropResolution(dataset, iso)) + '</p>' : '') + yearStrip(key, iso) + '</div>';
   }
 
   function categoryDetailHTML(series, iso) {
     var keys = series.keys.filter(function (key) { return state.selected[key]; });
+    var score = seriesResult(series, iso, state.yearFrom, state.yearTo);
     var swatches = keys.map(function (key) {
       return '<i style="background:' + DATASETS[key].color + '"></i>';
     }).join("");
     return '<section class="category-detail"><h3><span class="category-swatches">' + swatches + '</span>' +
       escapeHTML(series.label) + '</h3><p>' + formatNumber(seriesCount(series, iso)) +
-      ' ' + escapeHTML(countUnit(keys)) + ' in this window</p>' + seriesYearStrip(series, iso) +
+      ' ' + escapeHTML(countUnit(keys)) + ' in this window &rarr; ' +
+      agricultureModel.formatCoverageScore(score) + '</p>' + seriesYearStrip(series, iso) +
       '<details class="dataset-breakdown"><summary>Show dataset details</summary>' +
       keys.map(function (key) { return datasetDetailHTML(key, iso, true); }).join("") + '</details></section>';
   }
 
   function countryDetailHTML(iso) {
+    if ((state.detailedAgriculture || state.detailedHydro) && countryInScope(iso)) return displaySeries().map(function (item) {
+        var value = seriesResult(item, iso, state.yearFrom, state.yearTo);
+        var metric = item.hydro ? state.hydroMetric : state.agricultureMetric;
+        var bars = [];
+        for (var year = state.yearFrom; year <= state.yearTo; year++) {
+          var annual = seriesResult(item, iso, year, year);
+          bars.push('<i style="background:' + agricultureModel.color(annual.value, metric) + '" title="' + year + ': ' + agricultureModel.format(annual, metric) + '"></i>');
+        }
+        return '<div class="dataset-detail"><h3>' + escapeHTML(item.label) + '</h3><p>' +
+          agricultureModel.format(value, metric) + '</p><small>' + value.available +
+          ' of ' + value.expected + ' selected years have results.</small><div class="agriculture-years">' + bars.join('') + '</div></div>';
+      }).join('');
     var keys = selectedKeys();
     return !countryInScope(iso)
       ? '<div class="empty">Records are shown only for countries with DHS survey data.</div>'
@@ -1005,10 +1232,9 @@
 
   function coverageSummaryHTML(iso) {
     var assessed = selectedKeys().map(function (key) {
-      var density = perMillionKm2(datasetCount(key, iso), iso);
-      var maximum = datasetMaxima[key] || 0;
-      return { key: key, score: density && maximum ? Math.log1p(density) / Math.log1p(maximum) : 0 };
-    });
+      return { key: key, score: agricultureModel.datasetValue(key, iso, state.yearFrom, state.yearTo, state.agricultureAggregation).value };
+    }).filter(function (item) { return item.score !== null; });
+    if (!assessed.length) return '<section class="coverage-profile"><h3>Coverage unavailable</h3><p>No verified results for the selected sources and years.</p></section>';
     var wellCovered = assessed.filter(function (item) { return item.score >= 0.66; });
     var gaps = assessed.filter(function (item) { return item.score < 0.33; });
     var headline = wellCovered.length === assessed.length
@@ -1020,7 +1246,28 @@
       }).join(", ") + "."
       : "No selected source falls in the lower third of the displayed coverage scale.";
     return '<section class="coverage-profile"><h3>' + headline + '</h3><p>' + escapeHTML(detail) +
-      '</p><small>Screening summary based on records per million km² relative to other DHS-covered countries; it does not assess data quality or research need.</small></section>';
+      '</p><small>For each dataset, coverage combines its counted units per million km² (60%) and years with records (40%), relative to the DHS-country pool.</small></section>';
+  }
+
+  function agricultureYearStrip(iso, crop) {
+    var metric = crop ? state.agricultureMetric : state.agricultureAggregation, bars = [];
+    for (var year = state.yearFrom; year <= state.yearTo; year++) {
+      var value = crop ? agricultureModel.cropValue(iso, crop, metric, year, year)
+        : agricultureModel.aggregateValue(iso, state.agricultureAggregation, year, year);
+      bars.push('<i style="background:' + agricultureModel.color(value.value, metric) + '" title="' +
+        year + ': ' + agricultureModel.format(value, metric) + '"></i>');
+    }
+    return '<div class="agriculture-years">' + bars.join('') + '</div>';
+  }
+
+  function hydroYearStrip(iso, variable) {
+    var metric = 'dispersion', bars = [];
+    for (var year = state.yearFrom; year <= state.yearTo; year++) {
+      var value = agricultureModel.hydroValue(iso, variable, metric, year, year);
+      bars.push('<i style="background:' + agricultureModel.color(value.value, metric) + '" title="' +
+        year + ': ' + agricultureModel.format(value, metric) + '"></i>');
+    }
+    return '<div class="agriculture-years">' + bars.join('') + '</div>';
   }
 
   function openDetail(feature) {
@@ -1101,6 +1348,19 @@
   document.getElementById("coverageModal").onclick = function (event) {
     if (event.target === event.currentTarget) setCoverage(false);
   };
+  function setCoverageInfo(open) {
+    var modal = document.getElementById("coverageInfoModal");
+    modal.classList.toggle("open", open);
+    modal.setAttribute("aria-hidden", open ? "false" : "true");
+    if (open) document.getElementById("coverageInfoClose").focus();
+  }
+  document.getElementById("datasetLegend").onclick = function (event) {
+    if (event.target.closest("#coverageInfoButton")) setCoverageInfo(true);
+  };
+  document.getElementById("coverageInfoClose").onclick = function () { setCoverageInfo(false); };
+  document.getElementById("coverageInfoModal").onclick = function (event) {
+    if (event.target === event.currentTarget) setCoverageInfo(false);
+  };
   document.getElementById("coverageExamples").onclick = function (event) {
     var button = event.target.closest("[data-example-country]");
     if (!button) return;
@@ -1126,7 +1386,7 @@
     if (event.target === event.currentTarget) setLicences(false);
   };
   document.addEventListener("keydown", function (event) {
-    if (event.key === "Escape") { setLicences(false); setCoverage(false); }
+    if (event.key === "Escape") { setLicences(false); setCoverage(false); setCoverageInfo(false); }
   });
 
   loadHash();

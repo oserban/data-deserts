@@ -1,0 +1,10 @@
+# Save a copy of this file as ~/.cdsapirc (not in this repository).
+#
+# 1. Register or sign in at https://cds.climate.copernicus.eu/profile
+# 2. Copy the personal access token shown on that page.
+# 3. Visit the ERA5-Land monthly dataset and accept its terms of use.
+# 4. Replace <PERSONAL-ACCESS-TOKEN> below.
+#
+# This credential is intentionally ignored by Git. Never commit a real token.
+url: https://cds.climate.copernicus.eu/api
+key: <PERSONAL-ACCESS-TOKEN>

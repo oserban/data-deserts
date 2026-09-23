@@ -1,4 +1,5 @@
 import data from '../../data/datasets.json';
+import type { AgricultureAggregation, AgricultureMetric } from '../score-model';
 
 export type BusMessage = {
     type: string;
@@ -27,6 +28,12 @@ export type DataDesertsState = {
     selectedDatasets: string[];
     groupedByDomain: boolean;
     yearlyHistograms: boolean;
+    detailedAgriculture: boolean;
+    detailedHydro: boolean;
+    includeLsmsEstimates: boolean;
+    agricultureMetric: AgricultureMetric;
+    hydroMetric: Exclude<AgricultureMetric, 'coverage'>;
+    agricultureAggregation: AgricultureAggregation;
     countries: string[];
     mapView: MapViewState;
     countryAttribution: Record<string, string>;
@@ -55,18 +62,15 @@ export const MAX_COMPARE_COUNTRIES = 8;
 export const DEFAULT_STATE: DataDesertsState = {
     yearFrom: data.meta.yearMin,
     yearTo: data.meta.yearMax,
-    selectedDatasets: [
-        'biotime',
-        'living_planet',
-        'predicts',
-        'gbif',
-        'lsms_isa',
-        'dhs',
-        'mics',
-        'lsms'
-    ],
+    selectedDatasets: [...data.meta.datasetOrder],
     groupedByDomain: true,
     yearlyHistograms: false,
+    detailedAgriculture: false,
+    detailedHydro: false,
+    includeLsmsEstimates: true,
+    agricultureMetric: 'dispersion',
+    hydroMetric: 'dispersion',
+    agricultureAggregation: 'dispersion',
     countries: [],
     countryAttribution: {},
     participants: [],

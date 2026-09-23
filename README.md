@@ -1,8 +1,8 @@
 # Data Deserts
 
 Data Deserts is a static interactive map for comparing the geographic and temporal coverage of
-ecology and public-health datasets. Countries are represented by radial coverage charts, allowing sources
-to be viewed individually or grouped into Ecology and Public Health categories.
+ecology, agriculture, hydrology and public-health datasets. Countries are represented by radial
+coverage charts, allowing sources to be viewed individually or grouped into their four categories.
 
 The current visualisation is scoped to countries with DHS survey data. For those countries, a
 missing source-country-year combination remains missing; it is not inferred from another dataset.
@@ -43,11 +43,17 @@ data-deserts/
 │   ├── fetch_*.py               Source-specific executable parsers
 │   ├── data_deserts/            Reusable Python package
 │   └── data/                    Normalized data, with source archives under data/raw/
+├── eda/                         Exploratory analysis and publication figures
+│   ├── plot_data_divides.py     Creates figures from the shared data snapshot
+│   ├── test_plot_data_divides.py Analysis checks
+│   ├── requirements.txt         Plotting dependencies
+│   └── figures/                 Ignored generated figures, captions, and manifests
 ├── DATASETS.md                  Dataset inventory, definitions, and provenance
 └── README.md                    Project overview
 ```
 
-Executable workflows live directly under `processing/`. Reusable Python code lives in the
+Data acquisition and transformation workflows live under `processing/`; exploratory analysis
+and plotting workflows live under `eda/`. Reusable data-processing code lives in the
 `processing/data_deserts/` package. Generated browser artifacts are written to `app/data/`; they
 should not be edited by hand.
 
@@ -55,6 +61,16 @@ See [DATASETS.md](DATASETS.md) before adding, interpreting, or comparing sources
 each count means, how each source is obtained and cleaned, and whether it is currently included in
 the app build. More implementation detail is available in
 [processing/README.md](processing/README.md), while [app/README.md](app/README.md) documents the UI.
+
+For printable geographic coverage, country/source comparisons, and temporal overlap figures,
+see [eda/README.md](eda/README.md). The script
+exports vector PDF/SVG, high-resolution PNG, manuscript captions, and reproducibility metadata.
+
+The optional [harvested-area allocation analysis](processing/README.md#harvested-area-allocation-analysis)
+uses conservative spatial aggregation and reports the evidence prerequisites
+for publishing crop agriculture. Both apps offer an overview agriculture aggregate and
+a crop-only mode with dispersion, effective resolution and reporting-unit coverage filters.
+Each application keeps its own score calculations, including detailed crop measures.
 
 ## Build the application data
 
@@ -81,7 +97,7 @@ the ignored normalized inputs available privately and run `python3 processing/bu
 publishing the `app/` directory. A checkout without that protected build step intentionally has no
 runtime dataset bundle.
 
-The build includes BioTIME, Living Planet Database, PREDICTS, GBIF, LSMS-ISA, DHS, MICS, and LSMS. To refresh
+The build includes BioTIME, Living Planet Database, PREDICTS, GBIF, LSMS-ISA, GRDC, DHS, MICS, and LSMS. To refresh
 all sources and build the app in one pipeline, run:
 
 ```sh

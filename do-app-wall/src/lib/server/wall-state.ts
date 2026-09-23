@@ -59,6 +59,35 @@ export function updateWallState(input: Partial<DataDesertsState>) {
             typeof input.yearlyHistograms === 'boolean'
                 ? input.yearlyHistograms
                 : previous.yearlyHistograms,
+        includeLsmsEstimates:
+            typeof input.includeLsmsEstimates === 'boolean'
+                ? input.includeLsmsEstimates
+                : previous.includeLsmsEstimates,
+        detailedAgriculture:
+            typeof input.detailedAgriculture === 'boolean'
+                ? input.detailedAgriculture
+                : previous.detailedAgriculture,
+        detailedHydro:
+            typeof input.detailedHydro === 'boolean' ? input.detailedHydro : previous.detailedHydro,
+        agricultureMetric:
+            input.agricultureMetric &&
+            ['dispersion', 'resolution', 'similarity', 'availability', 'coverage'].includes(
+                input.agricultureMetric
+            )
+                ? input.agricultureMetric
+                : previous.agricultureMetric,
+        hydroMetric:
+            input.hydroMetric &&
+            ['dispersion', 'resolution', 'similarity', 'availability'].includes(input.hydroMetric)
+                ? input.hydroMetric
+                : previous.hydroMetric,
+        agricultureAggregation:
+            input.agricultureAggregation &&
+            ['dispersion', 'resolution', 'similarity', 'availability', 'coverage'].includes(
+                input.agricultureAggregation
+            )
+                ? input.agricultureAggregation
+                : previous.agricultureAggregation,
         countries,
         countryAttribution,
         participants: previous.participants,
@@ -70,6 +99,7 @@ export function updateWallState(input: Partial<DataDesertsState>) {
             pitch: finite(input.mapView?.pitch, previous.mapView.pitch)
         }
     };
+    if (currentState.detailedAgriculture) currentState.detailedHydro = false;
     return currentState;
 }
 

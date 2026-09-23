@@ -16,6 +16,8 @@ lerna-debug.log*
 *.local
 .env
 .env.local
+.cdsapirc
+processing/.cdsapirc
 do-app-wall/.env
 __pycache__/
 ~$*.xlsx
@@ -47,12 +49,40 @@ processing/data/gbif.json
 processing/data/gbif_report.json
 processing/data/lsms_isa.json
 processing/data/lsms_isa_report.json
+processing/data/grdc.json
+processing/data/grdc_report.json
+processing/data/raw/grdc/
+processing/data/raw/mirca-os/
+processing/data/raw/crop-allocation/
+processing/data/raw/gaez2015/
+processing/data/raw/hydro-comparisons/
+processing/data/crop_allocation/
+processing/data/crop_allocation.json
+processing/data/crop_allocation_report.json
+processing/data/mapspam.json
+processing/data/gaez.json
+processing/data/mirca2000.json
+processing/data/mirca_os.json
 processing/raw-data/*
+
+# Script-managed data.  These are downloaded inputs, resumable caches, or
+# derived reports/aggregates; rebuild them with processing/fetch_all.sh and
+# processing/build_data.py.  The dashboard boundary source remains tracked as
+# processing/data/world.raw.geojson.
+processing/data/raw/
+processing/data/crop_allocation/
+processing/data/hydro_comparisons/
+processing/data/*.json
+processing/data/*.csv
 
 # Built from the ignored normalized datasets during deployment. The public
 # repository contains app/data/datasets.template.js only.
 app/data/datasets.js
+app/data/world.js
 
 /do-app-wall/src/data/
+
+# Publication figures derived from the processed dashboard snapshot.
+/eda/figures/
 
 *.service

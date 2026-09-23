@@ -41,12 +41,24 @@ conditions. The processed deployment bundle is not offered as a replacement down
 | PREDICTS | Ecology | Sampling site assigned to a sampling year | `processing/data/predicts.json` | Included |
 | GBIF | Ecology | Cleaned occurrence record | `processing/data/gbif.json` | Included |
 | LSMS-ISA | Agriculture | Row in a classified agricultural data file | `processing/data/lsms_isa.json` | Included |
+| Crop agriculture | Agriculture | Reporting administrative unit/year, deduplicated across crops and products | `processing/data/crop_allocation_report.json` | Included; partial reconciled evidence |
+| GRDC | Hydrology | Distinct station with observations in a calendar year | `processing/data/grdc.json` | Included; station-years |
 | DHS | Public Health | Unique available surveys | `processing/data/dhs.json` | Included; defines country scope |
 | MICS | Public Health | Interviewed women plus interviewed men | `processing/data/mics.json` | Included |
 | LSMS | Public Health | Person/household-member roster record | `processing/data/lsms.json` | Included |
 
-Hydrology, Agriculture, GRDC, and the historical inventory spreadsheet are not part of the current
-aggregation. Their UI entries are placeholders only.
+Ecology, Agriculture, Hydrology, and Public Health are included. The historical inventory
+spreadsheet is not part of the current aggregation.
+
+Crop agriculture uses verified MIRCA-OS census observations linked to the countries in
+`processing/data/world.raw.geojson`. Allocation calculations use those exact map geometries,
+without sub-country divisions; evidence counts retain the original census units. The current adapters cover official national FAOSTAT exports and
+Mexico's SIAP state statistics. Calendar rows, imputed values, damaged archives and unresolved
+joins do not contribute counts. MapSPAM, GAEZ and MIRCA harvested-area rasters are used for
+allocation comparisons; their pixels are never counted as observations. Dispersion and effective
+resolution remain unavailable wherever those comparisons fail the statistical-base checks.
+Source scope, reconciliation commands and exclusions are documented in the
+[processing README](processing/README.md#harvested-area-allocation-analysis).
 
 ## BioTIME
 
@@ -102,6 +114,41 @@ python3 processing/fetch_living_planet.py \
 ```sh
 python3 processing/fetch_predicts.py
 ```
+
+## GRDC
+
+- **Source:** [GRDC Data Portal](https://grdc.bafg.de/data/data_portal/) and contributing national hydrological services
+- **Parser:** `processing/fetch_grdc.py`
+- **Input:** locally downloaded GRDC Export Format daily/monthly text files, ZIPs, or a folder of ZIPs;
+  default `processing/data/raw/grdc/`. The portal requires a data request; there is no automatic
+  discharge-download API. The old `grdc_stations.csv` contains no dates and is not used
+- **Output:** `processing/data/grdc.json`; audit in `grdc_report.json`
+- **Unit:** an observed **station-year**: each GRDC station ID counts once per calendar year with
+  at least one finite, non-missing observation. A multi-year sum is not a count of unique stations
+- **Cleaning:** read actual observation dates, not the declared start/end span; honour missing-value
+  markers; zero flow and finite signed flow count as observations. Current Value and legacy
+  Original/Calculated exports are supported. Valid calculated values take precedence; original values
+  are the fallback. Daily flag 99 is excluded; monthly flags are completeness percentages
+- **Deduplication:** union observed years by station ID across daily/monthly files and overlapping
+  archives. Conflicting station locations, malformed rows, unsupported formats, and truncated
+  exports fail explicitly. Build-time provenance validates every exported station-year count
+- **Country assignment:** station coordinates matched to the shared country polygons, not the
+  upstream catchment area. Stations outside mapped polygons remain in the audit but not the apps
+- **Interpretation:** measures observed station coverage, not discharge volume, measurement counts,
+  continuous monitoring, or catchment coverage. A single valid observation qualifies a year;
+  no inference is made about completeness within that year
+- **Access and attribution:** downloaded discharge values must not be redistributed. Derived
+  statistical products require attribution to “The Global Runoff Data Centre, 56068 Koblenz,
+  Germany”. Only country/year counts enter the apps; station-level audit and raw files are ignored
+  by Git. See the provider's [source and terms](https://grdc.bafg.de/data/data_portal/)
+
+```sh
+python3 processing/fetch_grdc.py
+python3 processing/fetch_grdc.py --input /path/to/grdc-exports
+```
+
+The shared build applies the same first-DHS-year cutoff and DHS country scope as every other
+source. It does not treat countries without downloaded GRDC observations as confirmed zero flow.
 
 ## DHS
 
@@ -181,10 +228,24 @@ NADA's `case_count` is the number of rows in one data file, not automatically a 
 LSMS studies can include separate household, member, plot, crop, livestock, enterprise, expenditure,
 and transaction files. The parser classifies every file using its API filename and description,
 selects the strongest person-roster candidate, and records alternatives and confidence in the audit
-report. When no defensible roster exists, the study remains unresolved rather than being counted.
+report. If names and descriptions do not identify a roster, public variable metadata must establish
+household and member identifiers, age, sex, and relationship to the household head in the same
+file. The audit retains the matched labels and source URL. Variable-based candidates with different
+row counts remain ambiguous. Derived analysis releases do not use variable-based inference.
+Skips distinguish missing file metadata, missing counts, ambiguous
+rosters and failed variable-metadata requests; they are not counted as zero observations.
 
 Roster records represent people described by the survey and do not prove that every household member
 was interviewed individually.
+
+Both apps offer **Include LSMS estimates**, on by default. It adds estimated household members for
+reviewed studies lacking a usable roster count, using one household file's rows multiplied by a
+cited household-size mean. Observed rosters always take priority. Estimates are stored separately
+from observed counts and labelled in country details; they affect both annual and aggregate scores
+when enabled. Records across studies/years do not represent deduplicated people.
+
+The offline [reviewed-study household-size dictionary](processing/resources/lsms_household_estimates.json)
+contains only the approved LSMS household-file counts and frozen means used by the estimator.
 
 ```sh
 python3 processing/fetch_lsms.py
@@ -226,7 +287,7 @@ ISO3 identifier.
 
 ## Generated app data
 
-`processing/build_data.py` reads all eight normalized datasets, preserves them as separate
+`processing/build_data.py` reads all nine normalized datasets, preserves them as separate
 sources, calculates scoped summaries and an aggregate, and writes:
 
 - `app/data/datasets.js`

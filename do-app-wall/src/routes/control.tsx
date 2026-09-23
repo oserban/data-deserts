@@ -12,6 +12,13 @@ import {
     type MapViewState,
     useWallStore
 } from '../lib/realtime';
+import {
+    datasetsForEstimates,
+    scoreModel,
+    type AgricultureMetric,
+    type AgricultureAggregation,
+    type HydroMetric
+} from '../lib/score-model';
 import { MAP_COLS, SCREEN_HEIGHT, SCREEN_WIDTH, WALL_ROWS } from '../lib/wall-config';
 
 type ControlSearch = { operator: string; token: string };
@@ -37,8 +44,7 @@ const countryOptions = world.features
     .filter((feature) => Object.values(datasets).some((dataset) => feature.id in dataset.records))
     .map((feature) => ({
         iso: feature.id,
-        name: feature.properties.name,
-        available: meta.datasetOrder.filter((id) => feature.id in datasets[id].records)
+        name: feature.properties.name
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
 const dhsCountryOptions = countryOptions.filter((country) => country.iso in datasets.dhs.records);
@@ -72,6 +78,7 @@ export const Route = createFileRoute('/control')({
 function ControlPage() {
     const { operator, token } = Route.useSearch();
     const state = useWallStore((value) => value);
+    const datasets = datasetsForEstimates(state.includeLsmsEstimates) as Record<string, Dataset>;
     const [countryQuery, setCountryQuery] = useState('');
     const [authorization, setAuthorization] = useState<ControlAuthorization>({
         status: 'checking',
@@ -270,6 +277,15 @@ function ControlPage() {
                     </Panel>
                     <Panel title="Visualisation options">
                         <Switch
+                            checked={state.includeLsmsEstimates}
+                            disabled={state.detailedAgriculture || state.detailedHydro}
+                            title="Include LSMS estimates"
+                            description="Add estimated household members where an observed roster count is unavailable."
+                            onChange={(checked) =>
+                                controlEngine.update({ includeLsmsEstimates: checked })
+                            }
+                        />
+                        <Switch
                             checked={state.yearlyHistograms}
                             title="Annual time bins"
                             description="Split dataset coverage into one bin per year."
@@ -278,13 +294,124 @@ function ControlPage() {
                             }
                         />
                         <Switch
-                            checked={state.groupedByDomain}
+                            checked={
+                                state.groupedByDomain &&
+                                !state.detailedAgriculture &&
+                                !state.detailedHydro &&
+                                !state.selectedDatasets.includes('agriculture_maps') &&
+                                !state.selectedDatasets.includes('hydro_maps')
+                            }
+                            disabled={
+                                state.detailedAgriculture ||
+                                state.detailedHydro ||
+                                state.selectedDatasets.includes('agriculture_maps') ||
+                                state.selectedDatasets.includes('hydro_maps')
+                            }
                             title="Group by category"
-                            description="Combine datasets into ecology, agriculture and public-health sectors."
+                            description={
+                                state.detailedAgriculture ||
+                                state.detailedHydro ||
+                                state.selectedDatasets.includes('agriculture_maps') ||
+                                state.selectedDatasets.includes('hydro_maps')
+                                    ? 'Category grouping is unavailable while map-comparison aggregates are shown.'
+                                    : 'Combine datasets into ecology, agriculture, hydrology and public-health sectors.'
+                            }
                             onChange={(checked) =>
                                 controlEngine.update({ groupedByDomain: checked })
                             }
                         />
+                        <Switch
+                            checked={state.detailedAgriculture}
+                            title="Detailed agriculture scores"
+                            description="Show only individual crops on the map; preserve overview dataset selections."
+                            onChange={(checked) =>
+                                controlEngine.update({
+                                    detailedAgriculture: checked,
+                                    detailedHydro: checked ? false : state.detailedHydro
+                                })
+                            }
+                        />
+                        <Switch
+                            checked={state.detailedHydro}
+                            title="Detailed hydrology scores"
+                            description="Show precipitation, cropland and irrigated-area comparisons separately from record-coverage datasets."
+                            onChange={(checked) =>
+                                controlEngine.update({
+                                    detailedHydro: checked,
+                                    detailedAgriculture: checked ? false : state.detailedAgriculture
+                                })
+                            }
+                        />
+                        {state.detailedAgriculture ? (
+                            <label className="mt-4 block text-sm">
+                                Crop metric
+                                <select
+                                    className="mt-2 w-full rounded-lg border border-[#3a5065] bg-[#101923] p-3"
+                                    value={state.agricultureMetric}
+                                    onChange={(event) =>
+                                        controlEngine.update({
+                                            agricultureMetric: event.target
+                                                .value as AgricultureMetric
+                                        })
+                                    }
+                                >
+                                    <option value="dispersion">
+                                        Dispersion (coefficient of variation)
+                                    </option>
+                                    <option value="resolution">Effective resolution (km)</option>
+                                    <option value="similarity">Allocation similarity</option>
+                                    <option value="availability">Source availability</option>
+                                    <option value="coverage">Reporting-unit coverage</option>
+                                </select>
+                            </label>
+                        ) : state.detailedHydro ? (
+                            <label className="mt-4 block text-sm">
+                                Hydrology metric
+                                <select
+                                    className="mt-2 w-full rounded-lg border border-[#3a5065] bg-[#101923] p-3"
+                                    value={state.hydroMetric}
+                                    onChange={(event) =>
+                                        controlEngine.update({
+                                            hydroMetric: event.target.value as HydroMetric
+                                        })
+                                    }
+                                >
+                                    <option value="dispersion">
+                                        Dispersion (coefficient of variation)
+                                    </option>
+                                    <option value="resolution">Effective resolution (km)</option>
+                                    <option value="similarity">Allocation similarity</option>
+                                    <option value="availability">Source availability</option>
+                                </select>
+                            </label>
+                        ) : (
+                            <label className="mt-4 block text-sm">
+                                Agricultural map metric
+                                <select
+                                    className="mt-2 w-full rounded-lg border border-[#3a5065] bg-[#101923] p-3"
+                                    value={state.agricultureAggregation}
+                                    onChange={(event) =>
+                                        controlEngine.update({
+                                            agricultureAggregation: event.target
+                                                .value as AgricultureAggregation
+                                        })
+                                    }
+                                >
+                                    <option value="dispersion">
+                                        Dispersion (coefficient of variation)
+                                    </option>
+                                    <option value="resolution">Effective resolution (km)</option>
+                                    <option value="similarity">Allocation similarity</option>
+                                    <option value="availability">Source availability</option>
+                                    <option value="coverage">Reporting-unit coverage</option>
+                                </select>
+                            </label>
+                        )}
+                        <p className="mt-3 text-sm text-[#9fb0c0]">
+                            {state.detailedHydro
+                                ? scoreModel.hydro.reason
+                                : scoreModel.agriculture.reason}
+                        </p>
                     </Panel>
                     <details className="group rounded-xl border border-[#2c3e50] bg-[#172230]">
                         <summary className="flex cursor-pointer list-none items-center justify-between gap-4 p-5">
@@ -299,7 +426,16 @@ function ControlPage() {
                                 </i>
                             </span>
                         </summary>
-                        <div className="border-t border-[#2c3e50] p-5">
+                        <fieldset
+                            disabled={state.detailedAgriculture || state.detailedHydro}
+                            className="border-t border-[#2c3e50] p-5 disabled:opacity-50"
+                        >
+                            {(state.detailedAgriculture || state.detailedHydro) && (
+                                <p className="mb-4 text-sm text-[#9fb0c0]">
+                                    Overview selections are preserved while detailed map comparisons
+                                    are shown.
+                                </p>
+                            )}
                             <div className="mb-4 flex justify-end gap-3 text-sm">
                                 <button
                                     className="text-[#5ec5ff]"
@@ -367,7 +503,7 @@ function ControlPage() {
                                     ) : null;
                                 })}
                             </div>
-                        </div>
+                        </fieldset>
                     </details>
                     <details className="group rounded-xl border border-[#2c3e50] bg-[#172230]">
                         <summary className="flex cursor-pointer list-none items-center justify-between gap-4 p-5">
@@ -590,6 +726,9 @@ function ControlPage() {
                         <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-5">
                             {QUICK_COUNTRIES.map((country) => {
                                 const selected = state.countries.includes(country.iso);
+                                const available = meta.datasetOrder.filter(
+                                    (id) => country.iso in datasets[id].records
+                                ).length;
                                 const atLimit =
                                     state.countries.length >= MAX_COMPARE_COUNTRIES && !selected;
                                 return (
@@ -598,16 +737,14 @@ function ControlPage() {
                                         title={
                                             atLimit
                                                 ? `Remove a country before adding ${country.name}`
-                                                : `${country.available.length} datasets with records`
+                                                : `${available} datasets with records`
                                         }
                                         disabled={atLimit}
                                         onClick={() => toggleCountry(country.iso)}
                                         className={`rounded-lg border px-2 py-2 text-left text-xs disabled:cursor-not-allowed disabled:opacity-35 ${selected ? 'border-[#5ec5ff] bg-[#17334a]' : 'border-[#2c3e50] bg-[#101923]'}`}
                                     >
                                         <b className="block truncate">{country.name}</b>
-                                        <span className="text-[#9fb0c0]">
-                                            {country.available.length} sources
-                                        </span>
+                                        <span className="text-[#9fb0c0]">{available} sources</span>
                                     </button>
                                 );
                             })}
@@ -741,15 +878,19 @@ function Switch({
     checked,
     title,
     description,
-    onChange
+    onChange,
+    disabled = false
 }: {
     checked: boolean;
     title: string;
     description: string;
     onChange: (checked: boolean) => void;
+    disabled?: boolean;
 }) {
     return (
-        <label className="mb-3 flex cursor-pointer items-center justify-between gap-4 rounded-lg bg-[#101923] p-3 last:mb-0">
+        <label
+            className={`mb-3 flex items-center justify-between gap-4 rounded-lg bg-[#101923] p-3 last:mb-0 ${disabled ? 'opacity-50' : 'cursor-pointer'}`}
+        >
             <span>
                 <b className="block text-sm">{title}</b>
                 <small className="text-[#9fb0c0]">{description}</small>
@@ -757,6 +898,7 @@ function Switch({
             <input
                 type="checkbox"
                 checked={checked}
+                disabled={disabled}
                 onChange={(event) => onChange(event.target.checked)}
             />
         </label>

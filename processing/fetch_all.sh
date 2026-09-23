@@ -8,7 +8,11 @@ RUN_BUILD=false
 FORCE_FETCH=false
 LIVING_PLANET_INPUT=""
 MICS_INPUT="$SCRIPT_DIR/data/raw/MICS_Datasets.zip"
+GRDC_INPUT="$SCRIPT_DIR/data/raw/grdc"
 SKIPPED_LIST=""
+WITH_CROP_ALLOCATION=false
+WITH_HYDRO_COMPARISONS=false
+CROP_ALLOCATION_BLOCKED=false
 
 usage() {
   printf '%s\n' \
@@ -18,11 +22,15 @@ usage() {
     "" \
     "Options:" \
     "  --build                     Run processing/build_data.py after all fetches" \
+    "  --crop-allocation           Include the strict harvested-area allocation workflow" \
+    "                              Missing reviewed evidence defers this stage; other errors stop the pipeline" \
+    "  --hydro-comparisons         Fetch and compute the three approved hydro map comparisons" \
     "  --force                     Fetch/parse even when today's output already exists" \
     "  --living-planet PATH        Agreement-protected Living Planet ZIP/CSV" \
     "  --mics PATH                 MICS archive (default: processing/data/raw/MICS_Datasets.zip)" \
+    "  --grdc PATH                 GRDC ZIP/folder (default: processing/data/raw/grdc)" \
     "  --skip NAME                 Skip a dataset; repeatable" \
-    "                              Names: biotime living_planet predicts dhs mics gbif lsms lsms_isa" \
+    "                              Names: biotime living_planet predicts dhs mics gbif lsms lsms_isa grdc crop_allocation hydro_comparisons" \
     "  -h, --help                  Show this help" \
     "" \
     "By default, datasets whose normalized output was modified today are skipped." \
@@ -32,6 +40,8 @@ usage() {
 while (($#)); do
   case "$1" in
     --build) RUN_BUILD=true; shift ;;
+    --crop-allocation) WITH_CROP_ALLOCATION=true; shift ;;
+    --hydro-comparisons) WITH_HYDRO_COMPARISONS=true; shift ;;
     --force) FORCE_FETCH=true; shift ;;
     --living-planet)
       [[ $# -ge 2 ]] || { printf 'Missing value for --living-planet\n' >&2; exit 2; }
@@ -39,10 +49,13 @@ while (($#)); do
     --mics)
       [[ $# -ge 2 ]] || { printf 'Missing value for --mics\n' >&2; exit 2; }
       MICS_INPUT="$2"; shift 2 ;;
+    --grdc)
+      [[ $# -ge 2 ]] || { printf 'Missing value for --grdc\n' >&2; exit 2; }
+      GRDC_INPUT="$2"; shift 2 ;;
     --skip)
       [[ $# -ge 2 ]] || { printf 'Missing value for --skip\n' >&2; exit 2; }
       case "$2" in
-        biotime|living_planet|predicts|dhs|mics|gbif|lsms|lsms_isa) SKIPPED_LIST="$SKIPPED_LIST $2" ;;
+        biotime|living_planet|predicts|dhs|mics|gbif|lsms|lsms_isa|grdc|crop_allocation|hydro_comparisons) SKIPPED_LIST="$SKIPPED_LIST $2" ;;
         *) printf 'Unknown dataset for --skip: %s\n' "$2" >&2; exit 2 ;;
       esac
       shift 2 ;;
@@ -125,10 +138,34 @@ fi
 run_fetch gbif "$SCRIPT_DIR/data/gbif.json" "$SCRIPT_DIR/fetch_gbif.py"
 run_fetch lsms "$SCRIPT_DIR/data/lsms.json" "$SCRIPT_DIR/fetch_lsms.py"
 run_fetch lsms_isa "$SCRIPT_DIR/data/lsms_isa.json" "$SCRIPT_DIR/fetch_lsms_isa.py"
+run_fetch grdc "$SCRIPT_DIR/data/grdc.json" "$SCRIPT_DIR/fetch_grdc.py" --input "$GRDC_INPUT"
+
+if [[ "$WITH_CROP_ALLOCATION" == true ]] && fetch_needed crop_allocation "$SCRIPT_DIR/data/crop_allocation_report.json"; then
+  printf '\nFetching crop_allocation\n'
+  if "$PYTHON_BIN" "$SCRIPT_DIR/fetch_crop_allocation.py"; then
+    :
+  else
+    crop_status=$?
+    # Exit 3 means missing reviewed inputs, never a failed scientific/data assertion.
+    if [[ "$crop_status" -ne 3 ]]; then
+      exit "$crop_status"
+    fi
+    CROP_ALLOCATION_BLOCKED=true
+    printf '\nDeferring crop_allocation: verified evidence inputs are not ready. Continuing the remaining pipeline.\n'
+  fi
+fi
+
+if [[ "$WITH_HYDRO_COMPARISONS" == true ]]; then
+  run_fetch hydro_comparisons "$SCRIPT_DIR/data/hydro_comparisons/hydro_report.json" "$SCRIPT_DIR/fetch_hydro_comparisons.py"
+fi
 
 if [[ "$RUN_BUILD" == true ]]; then
   printf '\nBuilding application data\n'
   "$PYTHON_BIN" "$SCRIPT_DIR/build_data.py"
 fi
 
-printf '\nPipeline complete.\n'
+if [[ "$CROP_ALLOCATION_BLOCKED" == true ]]; then
+  printf '\nPipeline complete with crop_allocation blocked; no new agriculture scores were published.\n'
+else
+  printf '\nPipeline complete.\n'
+fi

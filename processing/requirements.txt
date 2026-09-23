@@ -3,6 +3,17 @@ pygbif==0.6.6
 
 # Imported directly by fetch_gbif.py and also used by pygbif.
 requests>=2.31,<3
+cdsapi>=0.7.7,<1
 
 # Trusted CA bundle used by the DHS and PREDICTS HTTPS clients when available.
 certifi>=2024.2.2
+
+# Harvested-area allocation analysis and its figures.
+numpy>=2,<3
+rasterio>=1.4,<2
+shapely>=2,<3
+pyproj>=3.6,<4
+pyshp>=2.3,<4
+pycountry>=24,<27
+matplotlib>=3.8,<4
+pdfplumber>=0.11,<1
