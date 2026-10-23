@@ -4,7 +4,7 @@ import { createElement, useEffect, useMemo, useRef, useState } from 'react';
 
 import data from '../../data/datasets.json';
 import world from '../../data/world.json';
-import { withBasePath } from '../../lib/base-path';
+import { fetchWithCredentials as fetch, withBasePath } from '../../lib/base-path';
 import { DATASET_REFERENCE } from '../../lib/dataset-reference';
 import {
     MAX_COMPARE_COUNTRIES,

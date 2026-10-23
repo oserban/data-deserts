@@ -8,7 +8,7 @@ import {
 } from '@phosphor-icons/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import { withBasePath } from '../lib/base-path';
+import { fetchWithCredentials as fetch, withBasePath } from '../lib/base-path';
 import { useTheme } from '../lib/theme-provider';
 import { SCREEN_HEIGHT, SCREEN_WIDTH, WALL_COLS, WALL_ROWS } from '../lib/wall-config';
 

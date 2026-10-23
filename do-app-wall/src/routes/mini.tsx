@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import data from '../data/datasets.json';
 import world from '../data/world.json';
-import { withBasePath } from '../lib/base-path';
+import { fetchWithCredentials as fetch, withBasePath, withPreviewSession } from '../lib/base-path';
 import { MAX_COMPARE_COUNTRIES, type DataDesertsState } from '../lib/realtime/types';
 
 type MiniSearch = { token: string };
@@ -18,11 +18,15 @@ export const Route = createFileRoute('/mini')({
     validateSearch: (search: Record<string, unknown>): MiniSearch => ({
         token: typeof search.token === 'string' ? search.token : ''
     }),
-    component: MiniControllerPage
+    component: PrivateMiniControllerPage
 });
 
-function MiniControllerPage() {
+function PrivateMiniControllerPage() {
     const { token: invitationToken } = Route.useSearch();
+    return <MiniControllerPage invitationToken={invitationToken} />;
+}
+
+export function MiniControllerPage({ invitationToken }: { invitationToken: string }) {
     const [session, setSession] = useState<SessionResponse | null>(null);
     const [name, setName] = useState('');
     const [confirmedName, setConfirmedName] = useState('');
@@ -34,7 +38,7 @@ function MiniControllerPage() {
 
     useEffect(() => {
         let active = true;
-        void fetch(withBasePath('/api/mini/session'), {
+        void fetch(withBasePath('/public/api/mini/session'), {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ token: invitationToken })
@@ -62,7 +66,7 @@ function MiniControllerPage() {
         if (!session || !confirmedName || status !== 'ready') return;
         const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
         const socket = new WebSocket(
-            `${protocol}://${window.location.host}${withBasePath('/bus')}`
+            `${protocol}://${window.location.host}${withPreviewSession('/public/bus')}`
         );
         socketRef.current = socket;
         const hello = () =>

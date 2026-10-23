@@ -31,7 +31,7 @@ export const Route = createRootRouteWithContext()({
                 content: getBasePath()
             }
         ],
-        links: [{ rel: 'stylesheet', href: withBasePath(appCss) }]
+        links: [{ rel: 'stylesheet', href: withBasePath(appCss), crossOrigin: 'use-credentials' }]
     }),
     component: RootComponent
 });
@@ -50,7 +50,7 @@ function RootDocument({ children }: { readonly children: React.ReactNode }) {
         <html lang="en" suppressHydrationWarning>
             <head>
                 <title>Data Deserts — distributed wall</title>
-                <HeadContent />
+                <HeadContent assetCrossOrigin="use-credentials" />
             </head>
             <body suppressHydrationWarning>
                 {/*
@@ -65,7 +65,7 @@ function RootDocument({ children }: { readonly children: React.ReactNode }) {
                 <ScriptOnce>
                     {`document.documentElement.classList.toggle(
               'dark',
-              localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)
+              (() => { try { return localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches); } catch { return window.matchMedia('(prefers-color-scheme: dark)').matches; } })()
           );`}
                 </ScriptOnce>
                 {/* ThemeProvider keeps theme state in sync across routes, tabs, and iframes. */}

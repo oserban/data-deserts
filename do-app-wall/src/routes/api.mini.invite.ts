@@ -16,7 +16,7 @@ export const Route = createFileRoute('/api/mini/invite')({
                     request.headers.get('x-forwarded-host') ??
                     request.headers.get('host') ??
                     source.host;
-                const url = `${protocol}://${host}${getBasePath()}/mini?token=${encodeURIComponent(invitation.token)}`;
+                const url = `${protocol}://${host}${getBasePath()}/public/mini?token=${encodeURIComponent(invitation.token)}`;
                 const svg = await QRCode.toString(url, {
                     type: 'svg',
                     errorCorrectionLevel: 'M',

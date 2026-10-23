@@ -81,9 +81,6 @@ importers:
       '@vitejs/plugin-react':
         specifier: ^6.0.1
         version: 6.1.0(@rolldown/plugin-babel@0.2.3(@babel/core@7.29.7)(@babel/runtime@7.29.7)(@voidzero-dev/vite-plus-core@0.1.24(@types/node@25.9.5)(jiti@2.7.0)(typescript@6.0.3))(rolldown@1.2.5))(@voidzero-dev/vite-plus-core@0.1.24(@types/node@25.9.5)(jiti@2.7.0)(typescript@6.0.3))(babel-plugin-react-compiler@1.0.0)
-      '@voidzero-dev/vite-plus-darwin-arm64':
-        specifier: 0.1.24
-        version: 0.1.24
       babel-plugin-react-compiler:
         specifier: ^1.0.0
         version: 1.0.0
@@ -3247,7 +3244,8 @@ snapshots:
       jiti: 2.7.0
       typescript: 6.0.3
 
-  '@voidzero-dev/vite-plus-darwin-arm64@0.1.24': {}
+  '@voidzero-dev/vite-plus-darwin-arm64@0.1.24':
+    optional: true
 
   '@voidzero-dev/vite-plus-darwin-x64@0.1.24':
     optional: true

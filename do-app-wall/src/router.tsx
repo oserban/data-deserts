@@ -13,7 +13,7 @@ export function getRouter() {
         defaultPreload: 'intent',
         defaultErrorComponent: DefaultCatchBoundary,
         defaultNotFoundComponent: DefaultNotFound,
-        scrollRestoration: true,
+        scrollRestoration: !import.meta.env.BASE_URL.startsWith('/serve/'),
         defaultStructuralSharing: true
     });
 }

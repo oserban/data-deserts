@@ -21,10 +21,13 @@ import { Route as ApiDatasetsRouteImport } from './routes/api.datasets'
 import { Route as ApiStateRouteImport } from './routes/api.state'
 import { Route as ApiTimeRouteImport } from './routes/api.time'
 import { Route as ApiWorldRouteImport } from './routes/api.world'
+import { Route as PublicBusRouteImport } from './routes/public.bus'
+import { Route as PublicMiniRouteImport } from './routes/public.mini'
 import { Route as ApiControlAuthRouteImport } from './routes/api.control.auth'
 import { Route as ApiDatasetsIdRouteImport } from './routes/api.datasets.$id'
 import { Route as ApiMiniInviteRouteImport } from './routes/api.mini.invite'
 import { Route as ApiMiniSessionRouteImport } from './routes/api.mini.session'
+import { Route as PublicApiMiniSessionRouteImport } from './routes/public.api.mini.session'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -86,6 +89,16 @@ const ApiWorldRoute = ApiWorldRouteImport.update({
   path: '/api/world',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PublicBusRoute = PublicBusRouteImport.update({
+  id: '/public/bus',
+  path: '/public/bus',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PublicMiniRoute = PublicMiniRouteImport.update({
+  id: '/public/mini',
+  path: '/public/mini',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiControlAuthRoute = ApiControlAuthRouteImport.update({
   id: '/api/control/auth',
   path: '/api/control/auth',
@@ -106,6 +119,11 @@ const ApiMiniSessionRoute = ApiMiniSessionRouteImport.update({
   path: '/api/mini/session',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PublicApiMiniSessionRoute = PublicApiMiniSessionRouteImport.update({
+  id: '/public/api/mini/session',
+  path: '/public/api/mini/session',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -120,10 +138,13 @@ export interface FileRoutesByFullPath {
   '/api/state': typeof ApiStateRoute
   '/api/time': typeof ApiTimeRoute
   '/api/world': typeof ApiWorldRoute
+  '/public/bus': typeof PublicBusRoute
+  '/public/mini': typeof PublicMiniRoute
   '/api/control/auth': typeof ApiControlAuthRoute
   '/api/datasets/$id': typeof ApiDatasetsIdRoute
   '/api/mini/invite': typeof ApiMiniInviteRoute
   '/api/mini/session': typeof ApiMiniSessionRoute
+  '/public/api/mini/session': typeof PublicApiMiniSessionRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -138,10 +159,13 @@ export interface FileRoutesByTo {
   '/api/state': typeof ApiStateRoute
   '/api/time': typeof ApiTimeRoute
   '/api/world': typeof ApiWorldRoute
+  '/public/bus': typeof PublicBusRoute
+  '/public/mini': typeof PublicMiniRoute
   '/api/control/auth': typeof ApiControlAuthRoute
   '/api/datasets/$id': typeof ApiDatasetsIdRoute
   '/api/mini/invite': typeof ApiMiniInviteRoute
   '/api/mini/session': typeof ApiMiniSessionRoute
+  '/public/api/mini/session': typeof PublicApiMiniSessionRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -157,10 +181,13 @@ export interface FileRoutesById {
   '/api/state': typeof ApiStateRoute
   '/api/time': typeof ApiTimeRoute
   '/api/world': typeof ApiWorldRoute
+  '/public/bus': typeof PublicBusRoute
+  '/public/mini': typeof PublicMiniRoute
   '/api/control/auth': typeof ApiControlAuthRoute
   '/api/datasets/$id': typeof ApiDatasetsIdRoute
   '/api/mini/invite': typeof ApiMiniInviteRoute
   '/api/mini/session': typeof ApiMiniSessionRoute
+  '/public/api/mini/session': typeof PublicApiMiniSessionRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -177,10 +204,13 @@ export interface FileRouteTypes {
     | '/api/state'
     | '/api/time'
     | '/api/world'
+    | '/public/bus'
+    | '/public/mini'
     | '/api/control/auth'
     | '/api/datasets/$id'
     | '/api/mini/invite'
     | '/api/mini/session'
+    | '/public/api/mini/session'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -195,10 +225,13 @@ export interface FileRouteTypes {
     | '/api/state'
     | '/api/time'
     | '/api/world'
+    | '/public/bus'
+    | '/public/mini'
     | '/api/control/auth'
     | '/api/datasets/$id'
     | '/api/mini/invite'
     | '/api/mini/session'
+    | '/public/api/mini/session'
   id:
     | '__root__'
     | '/'
@@ -213,10 +246,13 @@ export interface FileRouteTypes {
     | '/api/state'
     | '/api/time'
     | '/api/world'
+    | '/public/bus'
+    | '/public/mini'
     | '/api/control/auth'
     | '/api/datasets/$id'
     | '/api/mini/invite'
     | '/api/mini/session'
+    | '/public/api/mini/session'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -232,9 +268,12 @@ export interface RootRouteChildren {
   ApiStateRoute: typeof ApiStateRoute
   ApiTimeRoute: typeof ApiTimeRoute
   ApiWorldRoute: typeof ApiWorldRoute
+  PublicBusRoute: typeof PublicBusRoute
+  PublicMiniRoute: typeof PublicMiniRoute
   ApiControlAuthRoute: typeof ApiControlAuthRoute
   ApiMiniInviteRoute: typeof ApiMiniInviteRoute
   ApiMiniSessionRoute: typeof ApiMiniSessionRoute
+  PublicApiMiniSessionRoute: typeof PublicApiMiniSessionRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -323,6 +362,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiWorldRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/public/bus': {
+      id: '/public/bus'
+      path: '/public/bus'
+      fullPath: '/public/bus'
+      preLoaderRoute: typeof PublicBusRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/public/mini': {
+      id: '/public/mini'
+      path: '/public/mini'
+      fullPath: '/public/mini'
+      preLoaderRoute: typeof PublicMiniRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/control/auth': {
       id: '/api/control/auth'
       path: '/api/control/auth'
@@ -349,6 +402,13 @@ declare module '@tanstack/react-router' {
       path: '/api/mini/session'
       fullPath: '/api/mini/session'
       preLoaderRoute: typeof ApiMiniSessionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/public/api/mini/session': {
+      id: '/public/api/mini/session'
+      path: '/public/api/mini/session'
+      fullPath: '/public/api/mini/session'
+      preLoaderRoute: typeof PublicApiMiniSessionRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -379,9 +439,12 @@ const rootRouteChildren: RootRouteChildren = {
   ApiStateRoute: ApiStateRoute,
   ApiTimeRoute: ApiTimeRoute,
   ApiWorldRoute: ApiWorldRoute,
+  PublicBusRoute: PublicBusRoute,
+  PublicMiniRoute: PublicMiniRoute,
   ApiControlAuthRoute: ApiControlAuthRoute,
   ApiMiniInviteRoute: ApiMiniInviteRoute,
   ApiMiniSessionRoute: ApiMiniSessionRoute,
+  PublicApiMiniSessionRoute: PublicApiMiniSessionRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

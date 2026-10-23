@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { defineHooks } from 'crossws';
+import { defineHooks, type Peer } from 'crossws';
 
 import type { BusMessage, DataDesertsState } from '../lib/realtime';
 import { validateControlToken } from '../lib/server/control-auth';
@@ -18,8 +18,14 @@ import {
 
 const miniPeers = new Set<string>();
 
-const hooks = defineHooks({
+function isPublicBusPeer(peer: Peer): boolean {
+    return new URL(peer.request.url).pathname.endsWith('/public/bus');
+}
+
+export const hooks = defineHooks({
     open(peer) {
+        // Do not disclose wall state or subscribe until the mini session is validated.
+        if (isPublicBusPeer(peer)) return;
         peer.send({ type: 'hello', peerId: peer.id, state: getWallState() });
         peer.subscribe('data-deserts');
         peer.publish('data-deserts', {
@@ -41,6 +47,11 @@ const hooks = defineHooks({
         } catch {
             return;
         }
+        if (
+            isPublicBusPeer(peer) &&
+            payload.type !== 'mini/hello' &&
+            payload.type !== 'mini/add'
+        ) return;
         if (payload.type === 'state/update' && payload.state) {
             if (miniPeers.has(peer.id)) return;
             if (!validateControlToken(payload.controlToken)) {
@@ -60,20 +71,26 @@ const hooks = defineHooks({
         if (typeof payload.token !== 'string' || typeof payload.name !== 'string') return;
         const session = authenticateSession(payload.token, peer.id, payload.name);
         if (!session || !session.name) {
-            miniPeers.delete(peer.id);
+            const wasMini = miniPeers.delete(peer.id);
             const state = setParticipants(activeParticipants());
             peer.send({
                 type: 'mini/error',
                 code: 'expired',
                 message: 'This controller has expired. Rescan the QR code.'
             });
-            peer.publish('data-deserts', {
-                type: 'state/update',
-                state,
-                peerId: peer.id,
-                peerCount: peer.peers.size
-            });
+            if (wasMini || !isPublicBusPeer(peer)) {
+                peer.publish('data-deserts', {
+                    type: 'state/update',
+                    state,
+                    peerId: peer.id,
+                    peerCount: peer.peers.size
+                });
+            }
             return;
+        }
+        if (isPublicBusPeer(peer) && !miniPeers.has(peer.id)) {
+            peer.subscribe('data-deserts');
+            peer.send({ type: 'hello', peerId: peer.id, state: getWallState() });
         }
         miniPeers.add(peer.id);
         if (payload.type === 'mini/add') {
@@ -106,14 +123,16 @@ const hooks = defineHooks({
     },
     close(peer) {
         disconnectPeer(peer.id);
-        miniPeers.delete(peer.id);
+        const wasMini = miniPeers.delete(peer.id);
         const state = setParticipants(activeParticipants());
-        peer.publish('data-deserts', {
-            type: 'state/update',
-            state,
-            peerId: peer.id,
-            peerCount: peer.peers.size
-        });
+        if (wasMini || !isPublicBusPeer(peer)) {
+            peer.publish('data-deserts', {
+                type: 'state/update',
+                state,
+                peerId: peer.id,
+                peerCount: peer.peers.size
+            });
+        }
         peer.unsubscribe('data-deserts');
     }
 });

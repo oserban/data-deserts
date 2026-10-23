@@ -39,8 +39,12 @@ export function ThemeProvider({
     // handles pre-hydration class setup to avoid mismatches/flashes.
     const [theme, setTheme] = useState<Theme>(() => {
         if (typeof window === 'undefined') return defaultTheme;
-        const stored = localStorage.getItem(storageKey);
-        return isTheme(stored) ? stored : defaultTheme;
+        try {
+            const stored = localStorage.getItem(storageKey);
+            return isTheme(stored) ? stored : defaultTheme;
+        } catch {
+            return defaultTheme;
+        }
     });
 
     const handleMediaQuery = useCallback(
@@ -72,10 +76,18 @@ export function ThemeProvider({
         let targetTheme: string;
 
         if (theme === 'system') {
-            localStorage.removeItem(storageKey);
+            try {
+                localStorage.removeItem(storageKey);
+            } catch {
+                // Storage is unavailable inside an opaque preview frame.
+            }
             targetTheme = window.matchMedia(MEDIA).matches ? 'dark' : 'light';
         } else {
-            localStorage.setItem(storageKey, theme);
+            try {
+                localStorage.setItem(storageKey, theme);
+            } catch {
+                // The selected theme still applies to this document.
+            }
             targetTheme = theme;
         }
 

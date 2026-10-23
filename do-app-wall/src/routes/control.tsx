@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 
 import data from '../data/datasets.json';
 import world from '../data/world.json';
-import { withBasePath } from '../lib/base-path';
+import { fetchWithCredentials as fetch, withBasePath } from '../lib/base-path';
 import {
     controlEngine,
     DEFAULT_STATE,

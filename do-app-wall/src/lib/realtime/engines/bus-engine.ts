@@ -1,6 +1,6 @@
 import type { Store } from '@tanstack/react-store';
 
-import { withBasePath } from '../../base-path';
+import { fetchWithCredentials as fetch, withBasePath, withPreviewSession } from '../../base-path';
 import type { BusMessage, EngineRole, EngineStoreState, HelloBusMessage } from '../types';
 
 const RECONNECT_DELAY_MS = 1_500;
@@ -58,7 +58,7 @@ export abstract class BusEngine<TStoreState extends EngineStoreState = EngineSto
         this.setConnection('connecting');
         const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
         const socket = new WebSocket(
-            `${protocol}://${window.location.host}${withBasePath('/bus')}`
+            `${protocol}://${window.location.host}${withPreviewSession('/bus')}`
         );
         this.socket = socket;
         socket.onopen = () => {
